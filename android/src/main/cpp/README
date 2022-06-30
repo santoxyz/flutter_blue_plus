@@ -1,0 +1,37 @@
+# passi:
+
+
+source fluid-android-prepare.sh
+./fluid-clean.sh
+./fluid-android-download-and-compile.sh
+
+# in caso di errori utilizzare fluid-android-compile.sh per evitare il download di pacchetti già presenti.
+
+# errore fluidSynth gentables ! DOVREBBE ESEGUIRLO LO SCRIPT AUTOMATICAMENTE:
+# dentro la cartella fluidsynth-<version>/build eseguire:
+sed -i s,'^CMAKE_C_FLAGS:STRING=.*','CMAKE_C_FLAGS:STRING=-fPIE -fPIC -I/usr/include -Werror=implicit-function-declaration',g src/gentables/CMakeCache.txt
+make -j4
+
+######################################################################################
+#
+# modificare fluid-android-prepare.sh per altre architetture e ripetere le operazioni.
+#
+######################################################################################
+
+# deployo le librerie appena compilate:
+
+ANDROID_ARCHS=(armv7a aarch64 i686 x86_64)
+ANDROID_ABIS=(armeabi-v7a arm64-v8a x86 x86_64)
+mkdir -p deploy/{include,lib}
+cp -r opt/${ANDROID_ABIS[$i]}/include/fluidsynth* deploy/include
+for i in ${!ANDROID_ARCHS[@]}; 
+do 
+    echo "Deploying for arch: ${ANDROID_ARCHS[$i]}"
+    mkdir -p deploy/lib/${ANDROID_ABIS[$i]} 
+    yes | cp opt/android-${ANDROID_ARCHS[$i]}/lib/{libfluidsynth.so,libgio-2.0.so,libglib-2.0.so,libgmodule-2.0.so,libgobject-2.0.so,libgthread-2.0.so} deploy/lib/${ANDROID_ABIS[$i]}/
+    yes | cp opt/android-${ANDROID_ARCHS[$i]}/lib64/libfluidsynth.so deploy/lib/${ANDROID_ABIS[$i]}/
+done
+
+
+#spostare il contenuto della cartella deploy nel progetto flutter_blue utilizzato da re.corder. 
+

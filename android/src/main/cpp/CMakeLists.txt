@@ -1,0 +1,47 @@
+# For more information about using CMake with Android Studio, read the
+# documentation: https://d.android.com/studio/projects/add-native-code.html
+
+# Sets the minimum version of CMake required to build the native library.
+cmake_minimum_required(VERSION 3.4.1)
+
+# Create a variable fluidsynth_DIR to specify where the fluidsynth library is located.
+set(fluidsynth_DIR ${CMAKE_CURRENT_SOURCE_DIR}/fluidsynth)
+
+# Our code (native-lib.cpp) will be calling fluidsynth functions, so we add the fluidsynth binaries as dependencies of our code.
+
+add_library(libfluidsynth SHARED IMPORTED)
+set_target_properties(libfluidsynth PROPERTIES IMPORTED_LOCATION ${fluidsynth_DIR}/lib/${ANDROID_ABI}/libfluidsynth.so)
+
+add_library(libgio-2.0 SHARED IMPORTED)
+set_target_properties(libgio-2.0 PROPERTIES IMPORTED_LOCATION ${fluidsynth_DIR}/lib/${ANDROID_ABI}/libgio-2.0.so)
+
+add_library(libglib-2.0 SHARED IMPORTED)
+set_target_properties(libglib-2.0 PROPERTIES IMPORTED_LOCATION ${fluidsynth_DIR}/lib/${ANDROID_ABI}/libglib-2.0.so)
+
+add_library(libgmodule-2.0 SHARED IMPORTED)
+set_target_properties(libgmodule-2.0 PROPERTIES IMPORTED_LOCATION ${fluidsynth_DIR}/lib/${ANDROID_ABI}/libgmodule-2.0.so)
+
+add_library(libgobject-2.0 SHARED IMPORTED)
+set_target_properties(libgobject-2.0 PROPERTIES IMPORTED_LOCATION ${fluidsynth_DIR}/lib/${ANDROID_ABI}/libgobject-2.0.so)
+
+add_library(libgthread-2.0 SHARED IMPORTED)
+set_target_properties(libgthread-2.0 PROPERTIES IMPORTED_LOCATION ${fluidsynth_DIR}/lib/${ANDROID_ABI}/libgthread-2.0.so)
+
+# Library that will be called directly from JAVA
+add_library(native-lib SHARED native-lib.cpp)
+
+# Specifies the directory where the C or C++ source coude will look the #include <yourlibrary.h> header files
+target_include_directories(native-lib PRIVATE ${fluidsynth_DIR}/include)
+find_library( log-lib log )
+
+# Link everything alltogether. Notice that native-lib should be the first element in the list.
+target_link_libraries(
+        native-lib
+        libfluidsynth
+        libgio-2.0
+        libglib-2.0
+        libgmodule-2.0
+        libgobject-2.0
+        libgthread-2.0
+        ${log-lib}
+)
