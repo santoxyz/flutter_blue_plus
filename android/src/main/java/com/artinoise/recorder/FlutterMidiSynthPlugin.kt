@@ -164,7 +164,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
     TODO("Not yet implemented")
   }
 
-  fun manageMethodCall(@NonNull call: MethodCall, @NonNull result: MethodChannel.Result) {
+  public fun manageMethodCall(@NonNull call: MethodCall, @NonNull result: MethodChannel.Result) {
     when (call.method){
       "initSynth" -> {
         println("FlutterMidiSynthPlugin.kt initSynth called - context is " + context)
@@ -444,7 +444,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
     if (midiBridge.engine != null) midiBridge.write(msg)
   }
 
-  fun sendMidiProgramChange(ch: Int, i: Int) {
+  public fun sendMidiProgramChange(ch: Int, i: Int) {
     println ("AAAA sendMidiProgramChange ${ch} ${i} ")
     val msg = ByteArray(2)
     msg[0] = (0xc0 or ch).toByte()
