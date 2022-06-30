@@ -11,6 +11,7 @@
 
 #define NAMESPACE @"flutter_blue_plus"
 
+@class SwiftFlutterMidiSynthPlugin;
 @interface FlutterBluePlusPlugin : NSObject<FlutterPlugin, CBCentralManagerDelegate, CBPeripheralDelegate>
 @end
 

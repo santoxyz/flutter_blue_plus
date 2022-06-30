@@ -184,6 +184,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
 
   @Override
   public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
+    log(LogLevel.INFO, "FlutterBluePlusPlugin onMethodCall call.method=" + call.method + " call.arguments=" + call.arguments);
     if(mBluetoothAdapter == null && !"isAvailable".equals(call.method)) {
       result.error("bluetooth_unavailable", "the device does not have bluetooth", null);
       return;
@@ -265,6 +266,8 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
 
       case "startScan":
       {
+        log (LogLevel.INFO, "FlutterBluePlugin.java - startScan");
+
         ensurePermissionBeforeAction(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? Manifest.permission.BLUETOOTH_SCAN : Manifest.permission.ACCESS_FINE_LOCATION, (grantedScan, permissionScan) -> {
           if (grantedScan) {
             ensurePermissionBeforeAction(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? Manifest.permission.BLUETOOTH_CONNECT : null, (grantedConnect, permissionConnect) -> {
