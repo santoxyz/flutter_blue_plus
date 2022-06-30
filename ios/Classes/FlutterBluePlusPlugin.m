@@ -2,7 +2,18 @@
 // All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+#if __has_include(<flutter_blue_plus/flutter_blue-Swift.h>)
+#import <flutter_blue_plus/flutter_blue_plus-Swift.h>
+#else
+// Support project import fallback if the generated compatibility header
+// is not copied when this plugin is created as a library.
+// https://forums.swift.org/t/swift-static-libraries-dont-copy-generated-objective-c-header/19816
+//#import "flutter_blue_plus-Swift.h"
+#import <flutter_blue_plus/flutter_blue_plus-Swift.h>
+#endif
+
 #import "FlutterBluePlusPlugin.h"
+#import "FlutterMidiSynthPlugin.h"
 
 #define Log(LEVEL, FORMAT, ...) [self log:LEVEL format:@"[FBP-iOS] " FORMAT, ##__VA_ARGS__]
 
@@ -54,9 +65,12 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 @property(nonatomic) NSTimer *checkForMtuChangesTimer;
 @property(nonatomic) LogLevel logLevel;
 @property(nonatomic) NSNumber *showPowerAlert;
+@property(nonatomic, retain) SwiftFlutterMidiSynthPlugin *midiSynth;
+@property int transpose;
 @end
 
 @implementation FlutterBluePlusPlugin
+
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar
 {
     FlutterMethodChannel *methodChannel = [FlutterMethodChannel methodChannelWithName:NAMESPACE @"/methods"
@@ -77,6 +91,10 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     instance.showPowerAlert = @(YES);
 
     [registrar addMethodCallDelegate:instance channel:methodChannel];
+
+    //FlutterMidiSynthPlugin
+    instance.midiSynth = [[SwiftFlutterMidiSynthPlugin alloc] init];
+    instance.transpose = 0;
 }
 
 ////////////////////////////////////////////////////////////
@@ -781,6 +799,28 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                                     message:@"android only"
                                     details:NULL]);
         }
+
+        //transpose
+        else if([@"transpose" isEqualToString:call.method]){
+          NSNumber * t = [call arguments];
+          _transpose = (int)t.integerValue;
+        }
+
+        //FlutterMidiSynthPlugin
+        else if(
+            [@"initSynth" isEqualToString:call.method] ||
+            [@"setInstrument" isEqualToString:call.method] ||
+            [@"noteOn" isEqualToString:call.method] ||
+            [@"noteOff" isEqualToString:call.method] ||
+            [@"midiEvent" isEqualToString:call.method] ||
+            [@"setReverb" isEqualToString:call.method] ||
+            [@"setDelay" isEqualToString:call.method] ||
+            [@"initAudioSession" isEqualToString:call.method]
+        ) {
+            [_midiSynth handleMethodCall:call result:result];
+        }
+        //FINE FlutterMidiSynthPlugin
+
         else
         {
             result(FlutterMethodNotImplemented);
@@ -1360,6 +1400,97 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     }
 }
 
+- (bool) isSysex:(NSData*) data {
+    if (data.length - 2 < 6){
+        NSLog(@"isSysex: false (short)");
+        return false;
+    }
+
+    const char *bytes = [data bytes];
+
+
+    const char header[] = { 0xF0, 0x0, 0x2F, 0x7f, 0x0, 0x1};
+    unsigned char hdr[] = {bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7]};
+    //NSLog(@"isSysex: hdr=[%02x %02x %02x %02x %02x %02x] tail=[%02x]",bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],bytes[data.length -1] );
+
+    if ((unsigned char)bytes[data.length -1] == 0xf7 && memcmp(header,hdr,6)==0 ){
+        NSLog(@"isSysex: true");
+        return true;
+    }
+
+    //NSLog(@"isSysex: false");
+    return false;
+}
+
+- (NSArray*) parse:(NSData*) data {
+
+    const char *bytes = [data bytes];
+    NSMutableArray* ret = [NSMutableArray array];
+
+    if (data.length > 11) {
+        if ([self isSysex:data]){
+            return nil;
+        }
+    }
+
+    //Se non è un sysex, procedo nel processare il pacchetto.
+    const int STATE_HDR = 0;
+    const int STATE_TS = 1;
+    const int STATE_ST = 2;
+    const int STATE_D1 = 3;
+    const int STATE_D2 = 4;
+
+    int state = STATE_HDR;
+
+    unsigned char status = 0;
+    unsigned char channel = 0;
+    unsigned char d1 = -1;
+    unsigned char d2 = -1;
+
+    for (int i = 0; i < data.length; i++) {
+      unsigned char b = bytes[i];
+      switch (state) {
+        case STATE_HDR:
+          state = STATE_TS;
+          continue;
+        case STATE_TS:
+          state = STATE_ST;
+          continue;
+        case STATE_ST:
+          status = b & 0xf0;
+          channel = b & 0x0f;
+          state = STATE_D1;
+          continue;
+        case STATE_D1:
+          d1 = b;
+          if (status < 0xC0 || status > 0xE0) {
+            state = STATE_D2;
+          } else {
+            const unsigned char message[] = {status,channel,d1,d2};
+            [ret addObject:[NSData dataWithBytes:message length: 4]];
+            status = channel = 0;
+            d1 = d2 = -1;
+            state = STATE_TS;
+          }
+          continue;
+        case STATE_D2:
+          d2 = b;
+          const unsigned char message[] = {status,channel,d1,d2};
+          [ret addObject:[NSData dataWithBytes:message length: 4]];
+          status = channel = 0;
+          d1 = d2 = -1;
+          state = STATE_TS;
+          continue;
+
+        default:
+          NSLog(@"you should never reach this state!");
+          break;
+      }
+    }
+
+    return [ret copy];
+}
+
 - (void)peripheral:(CBPeripheral *)peripheral
     didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic
                               error:(NSError *)error
@@ -1373,6 +1504,54 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
         Log(LDEBUG, @"didUpdateValueForCharacteristic:");
         Log(LDEBUG, @"  chr: %@", [characteristic.UUID uuidStr]);
     }
+
+    NSData* data = characteristic.value;
+
+    //parse bytes
+    NSArray* messages = [self parse:data];
+    if (messages){
+        //NSLog(@"SNTX didUpdateValueForCharacteristic uuid: %@", [characteristic.UUID fullUUIDString]);
+        //Direct midi messages management
+        for (NSData* data in messages){
+          const char *m = [data bytes];
+          unsigned char status = m[0];
+          unsigned char ch = m[1];
+          unsigned char d1 = m[2];
+          unsigned char d2 = m[3];
+          //NSLog(@"SNTX value:[status:%02x ch:%02x d1:%02x d2:%02x]", status, ch, d1, d2);
+
+          if(status == 0x90 /*NoteON*/ || status == 0x80 /*NoteOFF*/ ||
+              (status >= 0xb0 /*CC*/ && status < 0xc0 /*PrgChg*/ && (d1 != 52 && d1 != 53) /*filtering accelerometer y an z*/ ) ||
+              (status >= 0xd0 /*ChPressure*/ && status < 0xe0 /*Bender*/)
+             ){
+              //NSLog(@"SNTX forwarding MidiMessage to Synth! status=%02x uuid=%@",status ,peripheral.identifier);
+              switch(status){
+              case 0x90:
+                      [_midiSynth noteOnWithMacWithChannel:ch note:d1+_transpose velocity:d2 mac:[peripheral.identifier UUIDString]];
+                  break;
+              case 0x80:
+                      [_midiSynth noteOffWithMacWithChannel:ch note:d1+_transpose velocity:d2 mac:[peripheral.identifier UUIDString]];
+                  break;
+              default:
+              /*
+                  if(status == 0xD0){ //aftertouch
+                    //print ("remapping aftertouch message ${msg.status} ${msg.d1} to Expression CC 0xB0 11 {msg.d1}" );
+                    status = 0xB0;
+                    int c = 60;
+                    //d1=0x7f; //test
+                    double v = c + ((127.0f-c)*d1)/127.0f;
+                    //NSLog (@"xpression c=%d d1=%d => v=%lf (int)v=%d",c,d1,v,(int)v);
+                    d2 = (int)v;
+                    d1 = 11; //Expression CC
+                  }
+               */
+                      [_midiSynth midiEventWithMacWithCommand:(ch | status) d1:d1 d2:d2 mac:[peripheral.identifier UUIDString]];
+                  break;
+              }
+          }
+        }
+    }
+    //NORMAL flutter_blue management (SYSEX):
 
     ServicePair *pair = [self getServicePair:peripheral characteristic:characteristic];
 
