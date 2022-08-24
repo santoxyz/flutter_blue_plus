@@ -1284,7 +1284,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
           continue;
 
         default:
-          log(LogLevel.WARNING, "you should never reach this state!");
+          Log.w(TAG, "you should never reach this state!");
           break;
       }
     }
@@ -1293,7 +1293,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
   }
 
   private void directMidiMessageManager(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-    //log(LogLevel.INFO, "[directMidiMessageManager] uuid: " + characteristic.getUuid().toString());
+    //Log.i(TAG, "[directMidiMessageManager] uuid: " + characteristic.getUuid().toString());
     byte[] data = characteristic.getValue();
     ArrayList<byte[]> messages = parseMidiMessages(data);
     if (messages != null && messages.size()>0){
@@ -1306,6 +1306,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
         if (status == (byte)0x90 /*noteON*/ ||
                 status == (byte)0x80 /*noteOFF*/ ||
                 (status >= (byte)0xb0 /*CC*/ && status < (byte)0xc0 /*PrgChg*/ && (d1 != 52 && d1 != 53) /*filtering accelerometer y and z*/) ||
+                (status >= (byte)0xc0 /*PrgChg*/ && status < (byte)0xd0 /*ChPressure*/) ||
                 (status >= (byte)0xd0 /*ChPressure*/ && status < (byte)0xe0 /*bender*/)
         ){
           switch (status){
@@ -1318,6 +1319,12 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
                 xpressions.clear();
               }
               midiSynthPlugin.sendNoteOffWithMAC(d1+transpose,d2,gatt.getDevice().getAddress());
+              break;
+
+            case (byte) 0xC0: //Program Change
+              Log.i(TAG, "[directMidiMessageManager] uuid: " + characteristic.getUuid().toString()
+                + " PROGRAM CHANGE - ch="+ch+" status="+ status + " d1=" + d1 + " d2=" + d2 + "(ignored) mac=" + gatt.getDevice().getAddress());
+              midiSynthPlugin.sendMidiWithMAC(ch|status,d1,0,gatt.getDevice().getAddress());
               break;
 
             case (byte) 0xB0:
@@ -1344,6 +1351,13 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
 
             default:
               midiSynthPlugin.sendMidiWithMAC(ch|status,d1,d2,gatt.getDevice().getAddress());
+          }
+        } else {
+          if(d1==52 && status==-80){
+
+          } else {
+            Log.i(TAG, "[directMidiMessageManager] uuid: " + characteristic.getUuid().toString()
+                    + " FILTERED msg ch=" + ch + " status=" + status + " d1=" + d1 + " d2=" + d2 + " mac=" + gatt.getDevice().getAddress());
           }
         }
 

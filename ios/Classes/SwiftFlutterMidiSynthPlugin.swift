@@ -183,6 +183,10 @@ import Foundation
         return sequencers[channel]!
     }
     
+    public func setInstrument(idx: Int, channel: Int , mac: String){
+        setInstrument(instrument: idx, channel: channel, bank: 0, mac: mac, expression: true)
+    }
+    
     private func setInstrument(instrument: Int, channel: Int = 0, bank: Int = 0, mac: String? = nil, expression: Bool? = false){
         print ("setInstrument \(instrument) \(channel) \(bank) \(mac) \(expression)")
         
