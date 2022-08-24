@@ -142,6 +142,9 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
         val cmd = call.argument<Int>("command")
         val d1 = call.argument<Int>("d1")
         val d2 = call.argument<Int>("d2")
+
+        println("FlutterMidiSynthplugin: midiEvent cmd="+cmd + " d1=" + d1 + " d2=" + d2)
+
         if (d2!! > 0) {
           sendMidi(cmd!!, d1!!, d2!!)
         } else {
@@ -271,7 +274,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
 
     }
 
-    println ("sendNoteOnWithMAC ${ch} $n $v $mac recorders= $recorders")
+    println ("AAAA sendNoteOnWithMAC ${ch} $n $v $mac recorders= $recorders")
     sendNoteOn(ch, n, v)
   }
 
@@ -311,6 +314,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   }
 
   public fun sendMidiProgramChange(ch: Int, i: Int) {
+    println ("AAAA sendMidiProgramChange ${ch} ${i} ")
     val msg = ByteArray(2)
     msg[0] = (0xc0 or ch).toByte()
     msg[1] = i.toByte()
@@ -319,6 +323,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
 
   // Send a midi message, 1 bytes (Control/Program Change)
   protected fun sendMidi(i: Int) {
+    println ("AAAA sendMidi ${i} ")
     val msg = ByteArray(2)
     msg[0] = 0xc0.toByte()
     msg[1] = i.toByte()
@@ -327,6 +332,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
 
   // Send a midi message, 2 bytes
   protected fun sendMidi(m: Int, i: Int) {
+    println ("AAAA sendMidi ${m} ${i} ")
     val msg = ByteArray(2)
     msg[0] = m.toByte()
     msg[1] = i.toByte()
@@ -335,6 +341,8 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
 
   // Send a midi message, 3 bytes
   public fun sendMidi(m: Int, n: Int, v: Int) {
+    //println ("AAAA sendMidi ${m} ${n} ${v} ")
+
     val msg = ByteArray(3)
     msg[0] = m.toByte()
     msg[1] = n.toByte()
@@ -343,7 +351,9 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   }
 
   public fun sendMidiWithMAC(m: Int, n: Int, v: Int, mac: String?) {
-    //println("sendMidiWithMAC $m $n $v $mac recorders= $recorders")
+    if (m != -80)
+      println("sendMidiWithMAC $m $n $v $mac recorders= $recorders")
+
     var vel = v
     var ch = 0
     var expression = false
