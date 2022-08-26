@@ -1251,6 +1251,8 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
 
     for (int i = 0; i < data.length; i++) {
       byte b = data[i];
+      //Log.i(TAG, "[parseMidiMessages] state: " + state + " status=" + bytesToHex(new byte[]{status}) + " channel=" + channel +
+              " d1=" + bytesToHex(new byte[]{d1}) + " d2=" + bytesToHex(new byte[]{d2}));
       switch (state) {
         case STATE_HDR:
           state = STATE_TS;
@@ -1265,10 +1267,12 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
           continue;
         case STATE_D1:
           d1 = b;
-          if (status < 0xC0 || status > 0xE0) {
+          if (status < (byte)(0xc0) || status > (byte)(0xe0)) {
+            //Log.i(TAG, "status=" + bytesToHex(new byte[]{status}) + " going to STATE_D2");
             state = STATE_D2;
           } else {
             //PRGM_CHANGE e AFTER_TOUCH hanno un solo byte di informazione
+            //Log.i(TAG, "adding MIDI msg containing only d1 byte");
             ret.add(new byte[]{status,channel,d1,d2});
             status = channel = 0;
             d1 = d2 = -1;
@@ -1277,6 +1281,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
           continue;
         case STATE_D2:
           d2 = b;
+          //Log.i(TAG, "adding MIDI msg containing d1 and d2 byte");
           ret.add(new byte[]{status,channel,d1,d2});
           status = channel = 0;
           d1 = d2 = -1;
@@ -1292,12 +1297,22 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
     return ret;
   }
 
+  public static String bytesToHex(byte[] a) {
+    StringBuilder sb = new StringBuilder(a.length * 2);
+    for(byte b: a)
+      sb.append(String.format("%02x", b));
+    return sb.toString();
+  }
+
   private void directMidiMessageManager(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-    //Log.i(TAG, "[directMidiMessageManager] uuid: " + characteristic.getUuid().toString());
     byte[] data = characteristic.getValue();
     ArrayList<byte[]> messages = parseMidiMessages(data);
+    //Log.i(TAG, "[directMidiMessageManager] uuid: " + characteristic.getUuid().toString()
+    //        + " data=" + bytesToHex(data) + " messages=" + messages);
     if (messages != null && messages.size()>0){
       for (byte[] m : messages) {
+        //Log.i(TAG, " processing message " + bytesToHex(m));
+
         byte status = m[0];
         byte ch = m[1];
         byte d1 = m[2];
@@ -1354,7 +1369,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
           }
         } else {
           if(d1==52 && status==-80){
-
+            //Log.i(TAG, "rotation d1="+d1);
           } else {
             Log.i(TAG, "[directMidiMessageManager] uuid: " + characteristic.getUuid().toString()
                     + " FILTERED msg ch=" + ch + " status=" + status + " d1=" + d1 + " d2=" + d2 + " mac=" + gatt.getDevice().getAddress());
