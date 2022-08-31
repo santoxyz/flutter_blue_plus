@@ -757,6 +757,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
       case "setReverb":
       case "setDelay":
       case "initAudioSession":
+      case "setAllowedInstrumentsIndexes":
       case "MIDIPrepare":
       case "MIDIPlay":
       case "MIDIPause":
@@ -1252,7 +1253,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
     for (int i = 0; i < data.length; i++) {
       byte b = data[i];
       //Log.i(TAG, "[parseMidiMessages] state: " + state + " status=" + bytesToHex(new byte[]{status}) + " channel=" + channel +
-              " d1=" + bytesToHex(new byte[]{d1}) + " d2=" + bytesToHex(new byte[]{d2}));
+      //        " d1=" + bytesToHex(new byte[]{d1}) + " d2=" + bytesToHex(new byte[]{d2}));
       switch (state) {
         case STATE_HDR:
           state = STATE_TS;
