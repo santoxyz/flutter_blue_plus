@@ -31,7 +31,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   private val recorders = mutableListOf<String>() //mac
   private val isDrum = mutableListOf<Boolean>()
   private val expressions = HashMap<String, Boolean>() //mac,expression
-
+  private var allowedInstrumentsIndexes = mutableListOf<Int>()
   //NO MORE used as a plugin
   /*
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -168,6 +168,11 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
         println("FlutterMidiSynthplugin: initAudioSession not needed under Android.");
         result.success(null);
       }
+      "setAllowedInstrumentsIndexes" -> {
+        allowedInstrumentsIndexes = call.arguments as MutableList<Int>
+        println("FlutterMidiSynthplugin: setAllowedInstrumentsIndexes " + allowedInstrumentsIndexes);
+        result.success(null);
+      }
 
       ///////////////////////
       //FLUID MEDIAPLAYER API
@@ -232,6 +237,11 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   }
 
   public fun selectInstrument(ch: Int, i: Int, bank: Int, mac:String?, expression: Boolean) {
+    if(!allowedInstrumentsIndexes.contains(i) && bank == 0){
+      println(" error! Instrument " + i + " not found in " + allowedInstrumentsIndexes)
+      return
+    }
+
     var _ch = ch
     //Select Sound Bank MSB
     if (!mac.isNullOrEmpty()) { //exclude DRUMS channel

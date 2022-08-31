@@ -16,6 +16,7 @@ import Foundation
     let NOTE_ON = 0x90
     let NOTE_OFF = 0x80
     var lastNoteOnOff = 0x80
+    var allowedInstrumentsIndexes: [Int] = []
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "FlutterMidiSynthPlugin", binaryMessenger: registrar.messenger())
@@ -67,6 +68,10 @@ import Foundation
         case "initAudioSession":
             let param = call.arguments as! Int32
         //nothing to do, using AVAudioSession.interruptionNotification
+
+        case "setAllowedInstrumentsIndexes":
+            allowedInstrumentsIndexes = call.arguments as! [Int]
+
         default:
             print ("unknown method \(call.method)" )
         }
@@ -184,12 +189,20 @@ import Foundation
     }
     
     public func setInstrument(idx: Int, channel: Int , mac: String){
-        setInstrument(instrument: idx, channel: channel, bank: 0, mac: mac, expression: true)
+        if(allowedInstrumentsIndexes.contains(idx)){
+            setInstrument(instrument: idx, channel: channel, bank: 0, mac: mac, expression: true)
+        } else {
+            print(" error! Instrument \(idx) not found in \(allowedInstrumentsIndexes)")
+        }
     }
     
     private func setInstrument(instrument: Int, channel: Int = 0, bank: Int = 0, mac: String? = nil, expression: Bool? = false){
         print ("setInstrument \(instrument) \(channel) \(bank) \(mac) \(expression)")
-        
+        if(!allowedInstrumentsIndexes.contains(instrument) && bank == 0){
+            print(" error! Instrument \(instrument) not found in \(allowedInstrumentsIndexes)")
+            return
+        }
+
         if(mac != nil){
             recorders[mac!] = channel
             expressions[mac!] = expression
