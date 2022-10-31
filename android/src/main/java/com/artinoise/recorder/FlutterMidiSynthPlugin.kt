@@ -14,6 +14,7 @@ import io.flutter.plugin.common.PluginRegistry.Registrar
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import java.util.*
+import java.util.HashMap
 
 /** FlutterMidiSynthPlugin */
 public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, MethodCallHandler,*/ /* MidiDriver.OnMidiStartListener,*/
@@ -32,7 +33,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   private val isDrum = mutableListOf<Boolean>()
   private val expressions = HashMap<String, Boolean>() //mac,expression
   private var allowedInstrumentsIndexes = mutableListOf<Int>()
-  private var allowedInstrumentsExpressions = mutableListOf<Int>()
+  private var allowedInstrumentsExpressions = mutableListOf<Boolean>()
 
   //NO MORE used as a plugin
   /*
@@ -171,8 +172,9 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
         result.success(null);
       }
       "setAllowedInstrumentsIndexes" -> {
-        allowedInstrumentsIndexes = call.argument<MutableList<Int>>("instruments");
-        allowedInstrumentsExpressions = call.argument<MutableList<Int>>("expressions");
+        val args = call.arguments as HashMap<String, *>
+        allowedInstrumentsIndexes = args["instruments"] as MutableList<Int>;
+        allowedInstrumentsExpressions = args["expressions"] as MutableList<Boolean>;
         println("FlutterMidiSynthplugin: setAllowedInstrumentsIndexes " + allowedInstrumentsIndexes +
                 " allowedInstrumentsExpressions " + allowedInstrumentsExpressions);
         result.success(null);
@@ -383,10 +385,18 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
         expression = expressions[mac]!!
       }
     } catch (e: KotlinNullPointerException){}
+
     if(n == 11 && !expression){
       println ("expression is filtered for this instrument.")
       vel=64
     }
+
+    if ( m and 0xf0 == 0xC0){ //if this is a ProgramChange, set expression for mac according to allowedInstrumentsExpressions
+      val pos = allowedInstrumentsIndexes.indexOf(n)
+      println("programchange detected - n=" + n + " pos=" + pos + " expression=" + allowedInstrumentsExpressions[pos])
+      expressions[mac!!] = allowedInstrumentsExpressions[pos]
+    }
+
     sendMidi(m + ch, n, vel)
   }
 
