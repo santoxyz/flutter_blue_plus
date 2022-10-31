@@ -42,8 +42,8 @@ class FlutterMidiSynthPlugin {
     return _channel.invokeMethod('initAudioSession', param);
   }
 
-  static Future<void> setAllowedInstrumentsIndexes(List param) async {
-    return _channel.invokeMethod('setAllowedInstrumentsIndexes', param);
+  static Future<void> setAllowedInstrumentsIndexes(List instruments, List expressions) async {
+    return _channel.invokeMethod('setAllowedInstrumentsIndexes', {"instruments": instruments, "expressions": expressions});
   }
 
   ///////////////////////

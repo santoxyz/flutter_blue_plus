@@ -32,6 +32,8 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   private val isDrum = mutableListOf<Boolean>()
   private val expressions = HashMap<String, Boolean>() //mac,expression
   private var allowedInstrumentsIndexes = mutableListOf<Int>()
+  private var allowedInstrumentsExpressions = mutableListOf<Int>()
+
   //NO MORE used as a plugin
   /*
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -169,8 +171,10 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
         result.success(null);
       }
       "setAllowedInstrumentsIndexes" -> {
-        allowedInstrumentsIndexes = call.arguments as MutableList<Int>
-        println("FlutterMidiSynthplugin: setAllowedInstrumentsIndexes " + allowedInstrumentsIndexes);
+        allowedInstrumentsIndexes = call.argument<MutableList<Int>>("instruments");
+        allowedInstrumentsExpressions = call.argument<MutableList<Int>>("expressions");
+        println("FlutterMidiSynthplugin: setAllowedInstrumentsIndexes " + allowedInstrumentsIndexes +
+                " allowedInstrumentsExpressions " + allowedInstrumentsExpressions);
         result.success(null);
       }
 
