@@ -1,4 +1,4 @@
-package com.artinoise.recorder
+package com.artinoise.recorder;
 
 import android.R
 import android.app.Activity
