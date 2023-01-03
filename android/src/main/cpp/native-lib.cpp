@@ -139,10 +139,10 @@ extern "C" JNIEXPORT bool JNICALL Java_com_artinoise_recorder_FluidSynthDriver_i
 extern "C" JNIEXPORT jboolean JNICALL Java_com_artinoise_recorder_FluidSynthDriver_setSF2(JNIEnv* env, jobject, jstring jSoundfontPath) {
     const char* soundfontPath = env->GetStringUTFChars(jSoundfontPath, nullptr);
     snprintf(sfPath,sizeof(sfPath),"%s",soundfontPath);
-    env->ReleaseStringUTFChars(jSoundfontPath, soundfontPath);
     // Load sample soundfont
-    int ret = fluid_synth_sfload(synth, soundfontPath, 1);
+    int ret = fluid_synth_sfload(synth, sfPath, 1);
     __android_log_print(ANDROID_LOG_INFO, TAG, "fluid_synth_sfload path=%s synth=%p adriver=%p ret=%d",soundfontPath, synth,adriver,ret);
+    env->ReleaseStringUTFChars(jSoundfontPath, soundfontPath);
     return true;
 }
 
