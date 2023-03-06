@@ -2,8 +2,13 @@
 // All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+#if __has_include(<flutter_blue_plus/flutter_blue_plus-Swift.h>)
+#import <flutter_blue_plus/flutter_blue_plus-Swift.h>
+#endif
+
 #import "FlutterBluePlusPlugin.h"
 #import "Flutterblueplus.pbobjc.h"
+#import "FlutterMidiSynthPlugin.h"
 
 @interface CBUUID (CBUUIDAdditionsFlutterBluePlus)
 - (NSString *)fullUUIDString;
@@ -38,6 +43,8 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 @property(nonatomic) NSMutableArray *servicesThatNeedDiscovered;
 @property(nonatomic) NSMutableArray *characteristicsThatNeedDiscovered;
 @property(nonatomic) LogLevel logLevel;
+@property(nonatomic, retain) SwiftFlutterMidiSynthPlugin *midiSynth;
+@property int transpose;
 @end
 
 @implementation FlutterBluePlusPlugin
@@ -257,9 +264,33 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     }
   } else if([@"requestMtu" isEqualToString:call.method]) {
     result([FlutterError errorWithCode:@"requestMtu" message:@"iOS does not allow mtu requests to the peripheral" details:NULL]);
-  } else {
-    result(FlutterMethodNotImplemented);
   }
+
+    //transpose
+    else if([@"transpose" isEqualToString:call.method]){
+        NSNumber * t = [call arguments];
+        _transpose = (int)t.integerValue;
+    }
+
+    //FlutterMidiSynthPlugin
+    else if(
+      [@"initSynth" isEqualToString:call.method] ||
+      [@"setInstrument" isEqualToString:call.method] ||
+      [@"noteOn" isEqualToString:call.method] ||
+      [@"noteOff" isEqualToString:call.method] ||
+      [@"midiEvent" isEqualToString:call.method] ||
+      [@"setReverb" isEqualToString:call.method] ||
+      [@"setDelay" isEqualToString:call.method] ||
+      [@"initAudioSession" isEqualToString:call.method] ||
+      [@"setAllowedInstrumentsIndexes" isEqualToString:call.method]
+      ) {
+        [_midiSynth handleMethodCall:call result:result];
+    }
+    //FINE FlutterMidiSynthPlugin
+
+    else {
+      result(FlutterMethodNotImplemented);
+    }
 }
 
 - (CBPeripheral*)findPeripheral:(NSString*)remoteId {
