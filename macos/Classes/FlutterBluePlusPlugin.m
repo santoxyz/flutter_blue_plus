@@ -284,6 +284,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
       [@"initAudioSession" isEqualToString:call.method] ||
       [@"setAllowedInstrumentsIndexes" isEqualToString:call.method]
       ) {
+        NSLog(@"!!! FlutterMidiSynthPlugin not implemented for macOS !!!");
         [_midiSynth handleMethodCall:call result:result];
     }
     //FINE FlutterMidiSynthPlugin
