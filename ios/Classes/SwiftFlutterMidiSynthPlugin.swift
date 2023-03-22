@@ -7,8 +7,8 @@ import Foundation
 @objcMembers public class SwiftFlutterMidiSynthPlugin: NSObject, FlutterPlugin {
 
     var parent: FlutterBluePlusPlugin?
-    var synth: SoftSynth?
-    var sequencers: [Int:Sequencer] = [:]
+    var synths: [Int:SoftSynth?] = [:]
+    var sequencers: [Int:[Int:Sequencer]] = [:]
     var recorders = [String : Int]() //[mac : channel]
     var expressions = [String : Bool]() //[mac : expression]
     typealias instrumentInfos = (channel : Int, instrument: Int , bank: Int , mac:String?)
@@ -40,43 +40,53 @@ import Foundation
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
         case "initSynth":
-            let i = call.arguments as! Int
-            self.initSynth(instrument: i);
+            let args = call.arguments as? Dictionary<String, Any>
+            let instrument = args?["instrument"] as! Int
+            let synthIdx = args?["synthIdx"] as! Int
+            self.initSynth(synthIdx: synthIdx, instrument: instrument);
         case "setInstrument":
             let args = call.arguments as? Dictionary<String, Any>
+            let synthIdx = args?["synthIdx"] as! Int
             let instrument = args?["instrument"] as! Int
             let channel = args?["channel"] as! Int
             let bank = args?["bank"] as! Int
             let mac = args?["mac"] as! String
             let expression = args?["expression"] as! Bool
-            self.setInstrument(instrument: instrument, channel: channel, bank: bank, mac: mac, expression: expression)
+            self.setInstrument(synthIdx: synthIdx, instrument: instrument, channel: channel, bank: bank, mac: mac, expression: expression)
         case "noteOn":
             let args = call.arguments as? Dictionary<String, Any>
+            let synthIdx = args?["synthIdx"] as! Int
             let channel = args?["channel"] as? Int
             let note = args?["note"]  as? Int
             let velocity = args?["velocity"]  as? Int
-            self.noteOn(channel: channel ?? 0, note: note ?? 60, velocity: velocity ?? 255)
+            self.noteOn(synthIdx: synthIdx, channel: channel ?? 0, note: note ?? 60, velocity: velocity ?? 255)
         case "noteOff":
             let args = call.arguments as? Dictionary<String, Any>
+            let synthIdx = args?["synthIdx"] as! Int
             let channel = args?["channel"] as? Int
             let note = args?["note"]  as? Int
             let velocity = args?["velocity"]  as? Int
-            self.noteOff(channel: channel ?? 0, note: note ?? 60, velocity: velocity ?? 255)
+            self.noteOff(synthIdx: synthIdx, channel: channel ?? 0, note: note ?? 60, velocity: velocity ?? 255)
         case "midiEvent":
             let args = call.arguments as? Dictionary<String, Any>
+            let synthIdx = args?["synthIdx"] as! Int
             let command = args?["command"] as! UInt32
             let d1 = args?["d1"] as! UInt32
             var d2 = args?["d2"] as! UInt32
             
-            self.midiEvent(command: command, d1: d1, d2: d2)
+            self.midiEvent(synthIdx: synthIdx, command: command, d1: d1, d2: d2)
             
         case "setReverb":
-            let amount = call.arguments as! NSNumber
-            self.setReverb(dryWet: Float(amount.doubleValue))
+            let args = call.arguments as? Dictionary<String, Any>
+            let synthIdx = args?["synthIdx"] as! Int
+            let amount = args?["amount"] as! NSNumber
+            self.setReverb(synthIdx: synthIdx, dryWet: Float(amount.doubleValue))
             
         case "setDelay":
-            let amount = call.arguments as! NSNumber
-            self.setDelay(dryWet: Float(amount.doubleValue))
+            let args = call.arguments as? Dictionary<String, Any>
+            let synthIdx = args?["synthIdx"] as! Int
+            let amount = args?["amount"] as! NSNumber
+            self.setDelay(synthIdx: synthIdx, dryWet: Float(amount.doubleValue))
             
         case "initAudioSession":
             let param = call.arguments as! Int32
@@ -180,8 +190,9 @@ import Foundation
             print("deactivating audio session")
             
             do {try  AVAudioSession.sharedInstance().setActive(false) } catch { print ("can't deactivate audiosession")}
-            AUGraphStop(synth!.audioGraph!)
-            
+            for synth in synths {
+                AUGraphStop(synth.value!.audioGraph!)
+            }
         // An interruption began. Update the UI as needed.
         
         case .ended:
@@ -191,7 +202,9 @@ import Foundation
             let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
             if options.contains(.shouldResume) {
                 print("reactivating audio session")
-                AUGraphStart(synth!.audioGraph!)
+                for synth in synths {
+                    AUGraphStart(synth.value!.audioGraph!)
+                }
             } else {
                 // Interruption ended. Playback should not resume.
             }
@@ -201,10 +214,10 @@ import Foundation
     }
     
     //TODO: add soundfont argument
-    public func initSynth(instrument: Int){
+    public func initSynth(synthIdx: Int, instrument: Int){
         setupNotifications()
-        synth = SoftSynth()
-        setInstrument(instrument: instrument)
+        synths[synthIdx] = SoftSynth()
+        setInstrument(synthIdx: synthIdx, instrument: instrument)
         
         
         if #available(iOS 10.0, *) {
@@ -216,33 +229,35 @@ import Foundation
         
         /*load voices (in background)*/
         DispatchQueue.global(qos: .background).async {
-            self.synth!.loadSoundFont()
-            self.synth!.loadPatch(patchNo: instrument)
+            self.synths[synthIdx]?!.loadSoundFont()
+            self.synths[synthIdx]?!.loadPatch(patchNo: instrument)
             DispatchQueue.main.async {
                 print ("background loading of voices completed." )
             }
         }
     }
     
-    private func getSequencer(channel: Int) -> Sequencer{
-        if (sequencers[channel] == nil){
-            sequencers[channel] = Sequencer(channel: channel)
+    private func getSequencer(synthIdx: Int, channel: Int) -> Sequencer{
+        if (sequencers[synthIdx]?[channel] == nil){
+            var v: [Int:Sequencer] = [:]
+            v[channel] = Sequencer(channel: channel)
+            sequencers[synthIdx] = v
         }
-        return sequencers[channel]!
+        return (sequencers[synthIdx]?[channel]!)!
     }
     
-    public func setInstrument(idx: Int, channel: Int , mac: String){
+    public func setInstrument(synthIdx: Int, idx: Int, channel: Int , mac: String){
         if(allowedInstrumentsIndexes.contains(idx)){
             let pos = allowedInstrumentsIndexes.firstIndex(of: idx)!
             let expression = allowedInstrumentsExpressions[pos]
-            setInstrument(instrument: idx, channel: channel, bank: 0, mac: mac, expression: expression)
+            setInstrument(synthIdx: synthIdx, instrument: idx, channel: channel, bank: 0, mac: mac, expression: expression)
         } else {
             print(" error! Instrument \(idx) not found in \(allowedInstrumentsIndexes)")
         }
     }
     
-    private func setInstrument(instrument: Int, channel: Int = 0, bank: Int = 0, mac: String? = nil, expression: Bool? = false){
-        print ("setInstrument \(instrument) \(channel) \(bank) \(mac) \(expression)")
+    private func setInstrument(synthIdx: Int, instrument: Int, channel: Int = 0, bank: Int = 0, mac: String? = nil, expression: Bool? = false){
+        print ("setInstrument synthIdx=\(synthIdx) instrument=\(instrument) channel=\(channel) bank=\(bank) mac=\(mac) expression=\(expression)")
         if(!allowedInstrumentsIndexes.contains(instrument) && bank == 0){
             print(" error! Instrument \(instrument) not found in \(allowedInstrumentsIndexes)")
             return
@@ -257,13 +272,13 @@ import Foundation
 
         let infos : instrumentInfos = ( channel: channel, instrument: instrument, bank: bank, mac: mac)
         instruments[channel] = infos
-        synth!.loadPatch(patchNo: instrument, channel: channel, bank: bank)
-        getSequencer(channel: channel).patch = UInt32(instrument)
+        synths[synthIdx]?!.loadPatch(patchNo: instrument, channel: channel, bank: bank)
+        getSequencer(synthIdx: synthIdx, channel: channel).patch = UInt32(instrument)
         
         if(mac != nil){
-            midiEventWithMac(command: 0xB0 + UInt32(channel), d1: 11, d2: 10, mac: mac!) //invio un expression fittizio
+            midiEventWithMac(synthIdx: synthIdx, command: 0xB0 + UInt32(channel), d1: 11, d2: 10, mac: mac!) //invio un expression fittizio
         } else {
-            midiEvent(command: 0xB0 + UInt32(channel), d1: 11, d2: 10);
+            midiEvent(synthIdx: synthIdx, command: 0xB0 + UInt32(channel), d1: 11, d2: 10);
         }
         
         if (specialModeInfos?.mode == 1 /*WAND*/ && specialModeInfos?.continuous == true /*continuous*/){
@@ -271,24 +286,24 @@ import Foundation
         }
     }
     
-    public func noteOnWithMac(channel: Int, note: Int, velocity: Int, mac: String ){
-        //print ("noteOnWithMac \(channel) \(note) \(velocity) \(mac)")
+    public func noteOnWithMac(synthIdx: Int, channel: Int, note: Int, velocity: Int, mac: String ){
+        print ("noteOnWithMac synthIdx=\(synthIdx) channel=\(channel) note=\(note) velocity=\(velocity) mac=\(mac)")
         var vel = velocity
         let ch = recorders[mac] ?? channel
         let expression = expressions[mac] ?? false
         //if (!expression){
         //    vel = Int(xpressionsMap[channel]?.last ?? UInt32(velocity))
         //}
-        noteOn(channel: ch, note: note, velocity: vel)
+        noteOn(synthIdx: synthIdx, channel: ch, note: note, velocity: vel)
     }
     
-    public func noteOffWithMac(channel: Int, note: Int, velocity: Int, mac: String){
-        //print ("noteOffWithMac \(channel) \(note) \(velocity) \(mac)")
+    public func noteOffWithMac(synthIdx: Int, channel: Int, note: Int, velocity: Int, mac: String){
+        print ("noteOffWithMac \(channel) \(note) \(velocity) \(mac)")
         let ch = recorders[mac] ?? channel
-        noteOff(channel: ch, note: note, velocity: velocity)
+        noteOff(synthIdx: synthIdx, channel: ch, note: note, velocity: velocity)
     }
     
-    public func midiEventWithMac(command: UInt32, d1: UInt32, d2: UInt32, mac: String){
+    public func midiEventWithMac(synthIdx: Int, command: UInt32, d1: UInt32, d2: UInt32, mac: String){
         var _d2 = d2
         let ch = recorders[mac] ?? 0
         let expression = expressions[mac] ?? false
@@ -296,7 +311,7 @@ import Foundation
             print ("expression disabled for this instrument.")
             _d2 = 80
         }
-        midiEvent(command: command+UInt32(ch), d1: d1, d2: _d2)
+        midiEvent(synthIdx: synthIdx, command: command+UInt32(ch), d1: d1, d2: _d2)
     }
 
     private func wand_noteOff(channel: Int, note: Int, velocity: Int){
@@ -319,8 +334,9 @@ import Foundation
         //print("\(now) SwiftFlutterMidiSyntPlugin.swift noteOn \(_channel)  \(note) \(velocity) ")
     }
 
-    public func noteOn(channel: Int, note: Int, velocity: Int){
+    public func noteOn(synthIdx: Int, channel: Int, note: Int, velocity: Int){
         if (channel < 0 || note < 0 || velocity < 0){ return }
+        let sequencer = getSequencer(synthIdx: synthIdx, channel: channel)
         var _channel = channel
         var _velocity = /*lastNoteOnOff == NOTE_OFF ? 0 :*/ velocity
 
@@ -331,14 +347,14 @@ import Foundation
 
         let sequencer = getSequencer(channel: _channel)
         lastNoteOnOff = NOTE_ON
-        synth!.playNoteOn(channel: _channel, note: UInt8(note), midiVelocity: _velocity, sequencer: sequencer)
+        synths[synthIdx]?!.playNoteOn(channel: channel, note: UInt8(note), midiVelocity: _velocity, sequencer: sequencer)
         sequencer.noteOn(note: UInt8(note))
 
         let now = (Int64)(NSDate().timeIntervalSince1970*1000)
         //print("\(now) SwiftFlutterMidiSynthPlugin.swift noteOn \(_channel)  \(note) \(_velocity) ")
     }
     
-    public func noteOff(channel: Int, note: Int, velocity: Int){
+    public func noteOff(synthIdx: Int, channel: Int, note: Int, velocity: Int){
         if (channel < 0 || note < 0 || velocity < 0){ return }
         var _channel = channel
 
@@ -349,8 +365,8 @@ import Foundation
         xpressionsMap[_channel] = []
         lastNoteOnOff = NOTE_OFF
 
-        let sequencer = getSequencer(channel: _channel)
-        synth!.playNoteOff(channel: _channel, note: UInt8(note), midiVelocity: velocity, sequencer: sequencer)
+        let sequencer = getSequencer(synthIdx: synthIdx, channel: channel)
+        synths[synthIdx]?!.playNoteOff(channel: channel, note: UInt8(note), midiVelocity: velocity, sequencer: sequencer)
         sequencer.noteOff(note: UInt8(note))
         //let now = (Int64)(NSDate().timeIntervalSince1970*1000)
         //print("\(now) SwiftFlutterMidiSyntPlugin.swift noteOff \(_channel)  \(note) \(velocity) ")
@@ -404,7 +420,8 @@ import Foundation
         print("backgroundBendTask stopped.");
     }
 
-    public func midiEvent(command: UInt32, d1: UInt32, d2: UInt32){
+    public func midiEvent(synthIdx: Int, command: UInt32, d1: UInt32, d2: UInt32){
+        print("SwiftFlutterMidiSyntPlugin.swift midiEvent synthIdx=\(synthIdx) command=\(command)  d1=\(d1) d2=\(d2) (RAW) ")
 
         var _d1 = d1
         var _d2 = d2
@@ -498,7 +515,7 @@ import Foundation
                 _d2 = scaleXpression(min:25, max:110, value: _d2)
                 //_d1 = 7
             }
-            synth!.midiEvent(cmd: command, d1: _d1, d2: _d2);
+            synths[synthIdx]?!.midiEvent(cmd: command, d1: _d1, d2: _d2);
         }
     }
     
@@ -506,12 +523,12 @@ import Foundation
         parent = arg
     }
     
-    public func setReverb(dryWet: Float){
-        synth!.setReverb(dryWet: dryWet)
+    public func setReverb(synthIdx: Int, dryWet: Float){
+        synths[synthIdx]?!.setReverb(dryWet: dryWet)
     }
     
-    public func setDelay(dryWet: Float){
-        synth!.setDelay(dryWet: dryWet)
+    public func setDelay(synthIdx: Int, dryWet: Float){
+        synths[synthIdx]?!.setDelay(dryWet: dryWet)
     }
 
     public func setSpecialMode(channel: UInt32, mode: UInt32, notes: [Int], continuous: Bool, time: UInt32, controller: UInt32, muted: Bool){
