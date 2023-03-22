@@ -1,41 +1,40 @@
 part of flutter_blue_plus;
 
 class FlutterMidiSynthPlugin {
+  static const DEFAULT_SYNTH = 0;
   //static const MethodChannel _channel = const MethodChannel('FlutterMidiSynthPlugin');
   static const MethodChannel _channel = const MethodChannel('flutter_blue_plus/methods');
-  static int curInstrument = -1;
 
   static Future<void> transpose(int t) async {
     return _channel.invokeMethod('transpose',t);
   }
 
-  static Future<void> initSynth(int i) async {
-    return _channel.invokeMethod('initSynth',i);
+  static Future<void> initSynth(int synthIdx, int i) async {
+    return _channel.invokeMethod('initSynth',{'synthIdx':synthIdx, 'instrument':i});
   }
 
-  static Future<void> setInstrument(int instrument, int channel, int bank, String mac, bool expression) async {
-    curInstrument = instrument;
-    return _channel.invokeMethod('setInstrument',{'channel':channel, 'instrument':instrument, 'bank':bank , 'mac':mac, 'expression':expression});
+  static Future<void> setInstrument(int synthIdx, int instrument, int channel, int bank, String mac, bool expression) async {
+    return _channel.invokeMethod('setInstrument',{'synthIdx':synthIdx, 'channel':channel, 'instrument':instrument, 'bank':bank , 'mac':mac, 'expression':expression});
   }
 
-  static Future<void> noteOn(int channel, int note, int velocity) async {
-    return _channel.invokeMethod('noteOn', {'channel':channel, 'note':note, 'velocity':velocity} );
+  static Future<void> noteOn(int synthIdx, int channel, int note, int velocity) async {
+    return _channel.invokeMethod('noteOn', {'synthIdx':synthIdx, 'channel':channel, 'note':note, 'velocity':velocity} );
   }
 
-  static Future<void> noteOff(int channel, int note, int velocity) async {
-    return _channel.invokeMethod('noteOff', {'channel':channel, 'note':note, 'velocity':velocity} );
+  static Future<void> noteOff(int synthIdx, int channel, int note, int velocity) async {
+    return _channel.invokeMethod('noteOff', {'synthIdx':synthIdx, 'channel':channel, 'note':note, 'velocity':velocity} );
   }
 
-  static Future<void> midiEvent(int cmd, int d1, int d2) async {
-    return _channel.invokeMethod('midiEvent', {'command':cmd, 'd1':d1, 'd2':d2} );
+  static Future<void> midiEvent(int synthIdx, int cmd, int d1, int d2) async {
+    return _channel.invokeMethod('midiEvent', {'synthIdx':synthIdx, 'command':cmd, 'd1':d1, 'd2':d2} );
   }
 
-  static Future<void> setReverb(double amount) async {
-    return _channel.invokeMethod('setReverb', amount );
+  static Future<void> setReverb(int synthIdx, double amount) async {
+    return _channel.invokeMethod('setReverb', {'synthIdx':synthIdx, 'amount':amount} );
   }
 
-  static Future<void> setDelay(double amount) async {
-    return _channel.invokeMethod('setDelay', amount );
+  static Future<void> setDelay(int synthIdx, double amount) async {
+    return _channel.invokeMethod('setDelay', {'synthIdx':synthIdx, 'amount':amount} );
   }
 
   static Future<void> initAudioSession(int param) async {
