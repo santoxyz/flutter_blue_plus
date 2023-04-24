@@ -10,6 +10,15 @@ class FlutterBluePlus {
   //
 
   static bool _initialized = false;
+  /// Singleton boilerplate
+  FlutterBluePlus._() {
+    _channel.setMethodCallHandler((MethodCall call) async {
+      _methodStreamController.add(call);
+    });
+    if (!Platform.isWindows) {
+      setLogLevel(logLevel);
+    }
+  }
 
   /// native platform channel
   static final MethodChannel _methods = const MethodChannel('flutter_blue_plus/methods');
