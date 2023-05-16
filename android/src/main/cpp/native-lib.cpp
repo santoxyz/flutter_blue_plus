@@ -173,7 +173,7 @@ extern "C" JNIEXPORT bool JNICALL Java_com_artinoise_recorder_FluidSynthDriver_w
         case MIDI_CMD_NOTE_ON:
             //__android_log_print(ANDROID_LOG_INFO, TAG, "FluidSynthDriver_sending Note ON !");
             fluid_synth_noteon(synth, ch, d1, d2);break;
-            case MIDI_CMD_NOTE_PRESSURE:
+        case MIDI_CMD_NOTE_PRESSURE:
             __android_log_print(ANDROID_LOG_INFO, TAG, "FluidSynthDriver_sending Note PRESSURE ! %d %d %d", ch,d1,d2);
             fluid_synth_key_pressure(synth, ch, d1, d2);break;
         case MIDI_CMD_CONTROL:
