@@ -772,6 +772,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
       case "MIDISetVolume":
       case "MIDISetTempo":
       case "MIDISetMetronomeVolume":
+      case "setSpecialMode":
         if(!call.method.equals("MIDIGetCurrentTick"))
           log(LogLevel.INFO, "[handleCall] " + call.method + " bridging call to FlutterMidiSynthPlugin");
         if (midiSynthPlugin == null){
@@ -1319,9 +1320,17 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
         byte d1 = m[2];
         byte d2 = m[3];
 
+
+        boolean filter_accel = true;
+        if(!midiSynthPlugin.hasSpecialModeWAND(ch)){ /*in WAND mode let the rotation CC pass*/
+          filter_accel &= (d1 != 52);
+        }
+        filter_accel &= (d1 != 53); /*filtering accelerometer y an z*/
+
+
         if (status == (byte)0x90 /*noteON*/ ||
                 status == (byte)0x80 /*noteOFF*/ ||
-                (status >= (byte)0xb0 /*CC*/ && status < (byte)0xc0 /*PrgChg*/ && (d1 != 52 && d1 != 53) /*filtering accelerometer y and z*/) ||
+                (status >= (byte)0xb0 /*CC*/ && status < (byte)0xc0 /*PrgChg*/ && filter_accel /*filtering accelerometer y and z*/) ||
                 (status >= (byte)0xc0 /*PrgChg*/ && status < (byte)0xd0 /*ChPressure*/) ||
                 (status >= (byte)0xd0 /*ChPressure*/ && status < (byte)0xe0 /*bender*/)
         ){
