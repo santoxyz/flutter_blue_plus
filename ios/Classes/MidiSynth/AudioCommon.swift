@@ -231,7 +231,7 @@ class AudioCommon
   func createSynthNode() {
     var cd = AudioComponentDescription(
       componentType: OSType(kAudioUnitType_MusicDevice),
-      componentSubType: OSType(kAudioUnitSubType_MIDISynth),
+      componentSubType: OSType(kAudioUnitSubType_MIDISynth), //kAudioUnitSubType_Sampler is monophonic, kAudioUnitSubType_MIDISynth is multitimbral
       componentManufacturer: OSType(kAudioUnitManufacturer_Apple),
       componentFlags: 0,componentFlagsMask: 0)
     checkError(osstatus: AUGraphAddNode(audioGraph!, &cd, &synthNode))

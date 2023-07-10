@@ -181,14 +181,14 @@ extern "C" JNIEXPORT bool JNICALL Java_com_artinoise_recorder_FluidSynthDriver_w
             fluid_synth_cc(synth, ch, d1, d2);break;
         case MIDI_CMD_PGM_CHANGE:
             lastInstrumentIdx = d1;
-            //__android_log_print(ANDROID_LOG_INFO, TAG, "FluidSynthDriver_sending Program Change Command! %d %d", ch,d1);
+            __android_log_print(ANDROID_LOG_INFO, TAG, "FluidSynthDriver_sending Program Change Command! %d %d", ch,d1);
             fluid_synth_program_change(synth, ch, d1);break;
         case MIDI_CMD_CHANNEL_PRESSURE:
              //__android_log_print(ANDROID_LOG_INFO, TAG, "FluidSynthDriver_sending Channel Pressure Command! %d %d", ch,d1);
            fluid_synth_channel_pressure(synth, ch, d1);break;
         case MIDI_CMD_BENDER:
-             //__android_log_print(ANDROID_LOG_INFO, TAG, "FluidSynthDriver_sending Pitch Bend Command! %d %d %d", ch,d1,d2);
-           fluid_synth_pitch_bend(synth, ch, d1);break;
+           //__android_log_print(ANDROID_LOG_INFO, TAG, "FluidSynthDriver_sending Pitch Bend Command! %d %d %d", ch,d1,d2);
+           fluid_synth_pitch_bend(synth, ch, ((d2 << 7) | d1));break;
     }
     return true;
 }

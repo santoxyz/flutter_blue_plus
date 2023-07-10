@@ -1,20 +1,16 @@
 package com.artinoise.recorder;
 
-import android.R
 import android.app.Activity
 import android.content.Context
-import android.content.res.Resources
 import androidx.annotation.NonNull
-import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
-import io.flutter.plugin.common.MethodChannel.MethodCallHandler
-import io.flutter.plugin.common.MethodChannel.Result
-import io.flutter.plugin.common.PluginRegistry.Registrar
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import java.util.*
 import java.util.HashMap
+import java.lang.*
+import java.util.ArrayList
 
 /** FlutterMidiSynthPlugin */
 public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, MethodCallHandler,*/ /* MidiDriver.OnMidiStartListener,*/
@@ -34,6 +30,29 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   private val expressions = HashMap<String, Boolean>() //mac,expression
   private var allowedInstrumentsIndexes = mutableListOf<Int>()
   private var allowedInstrumentsExpressions = mutableListOf<Boolean>()
+
+  private var specialModes = HashMap<Int,HashMap<String, *>>()
+  private var lastNoteForChannel = mutableListOf<Int>(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+
+  private var movingWindowDepth = 3
+  private var movingWindowForChannel = mutableListOf(
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+    mutableListOf<Int>(),
+  )
 
   //NO MORE used as a plugin
   /*
@@ -100,7 +119,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     TODO("Not yet implemented")
   }
 
-  public fun manageMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
+  fun manageMethodCall(@NonNull call: MethodCall, @NonNull result: MethodChannel.Result) {
     when (call.method){
       "initSynth" -> {
         println("FlutterMidiSynthPlugin.kt initSynth called - context is " + context)
@@ -179,7 +198,19 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
                 " allowedInstrumentsExpressions " + allowedInstrumentsExpressions);
         result.success(null);
       }
+      "setSpecialMode" -> {
+        val args = call.arguments as HashMap<String, *>
+        val channel = args["channel"] as Int
+        val mode = args["mode"] as Int
+        val notes = args["notes"] as MutableList<Int>
+        val continuous = args["continuous"] as Boolean
+        val time = args["time"] as Int
+        val controller = args["controller"] as Int
 
+        setSpecialMode(args, channel, mode, notes, continuous, time/10, controller)
+
+        result.success(null)
+      }
       ///////////////////////
       //FLUID MEDIAPLAYER API
       ///////////////////////
@@ -272,6 +303,12 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     sendMidi(0xB0 + _ch, 0x0,  bankMSB)
     sendMidi(0xB0 + _ch, 0x20, bankLSB)
     sendMidiProgramChange(_ch, i)
+
+
+    val specialModeInfos = specialModes[ch]
+    if(specialModeInfos?.get("mode") == 1 && specialModeInfos?.get("continuous") == true){
+      sendNoteOn(ch, lastNoteForChannel[ch], 80 /*velocity*/)
+    }
   }
 
   public fun sendNoteOnWithMAC(n: Int, v: Int, mac: String) {
@@ -329,7 +366,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     if (midiBridge.engine != null) midiBridge.write(msg)
   }
 
-  public fun sendMidiProgramChange(ch: Int, i: Int) {
+  fun sendMidiProgramChange(ch: Int, i: Int) {
     println ("AAAA sendMidiProgramChange ${ch} ${i} ")
     val msg = ByteArray(2)
     msg[0] = (0xc0 or ch).toByte()
@@ -355,14 +392,139 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     if ( midiBridge.engine != null) midiBridge.write(msg)
   }
 
+  private fun scaleRotation(fromMin: Int, fromMax: Int, toMin: Int, toMax: Int, value: Int) : Int {
+    val x = if (value > fromMin) {value - fromMin} else 0
+    val scaled: Double = toMin.toDouble() + x.toDouble()*toMax.toDouble()/(fromMax-fromMin).toDouble()
+    //println("scaleRotation fromMin=$fromMin fromMax=$fromMax toMin=$toMin toMax=$toMax v=$value x=$x scaled=$scaled" )
+    return scaled.toInt()
+  }
+
+  private fun scaleInclination(fromMin: Int, fromMax: Int, toMin: Int, toMax: Int, value:Int) : Double {
+    if(value < fromMin){
+      return toMin.toDouble()
+    }
+    val scaled: Double = toMin.toDouble() + (toMax-toMin).toDouble()*(value-fromMin).toDouble()/(fromMax-fromMin).toDouble()
+    //println("scaleInclination fromMin=$fromMin fromMax=$fromMax toMin=$toMin toMax=$toMax v=$value scaled=$scaled ${noteToString(scaled.toInt())}" )
+    return scaled
+  }
+
+  fun MutableList<Int>.findClosest(input: Int) = fold(null) { acc: Int?, num ->
+    val closest = if (num <= input && (acc == null || num > acc)) num else acc
+    if (closest == input) return@findClosest closest else return@fold closest
+  }
+
+  fun selectNote(note: Int, ch: Int, notes: ArrayList<Int>) : Int {
+    val prev = movingWindowForChannel[ch].toList()
+    movingWindowForChannel[ch].add(note)
+    movingWindowForChannel.set(ch, movingWindowForChannel[ch].takeLast(movingWindowDepth).toMutableList())
+    val n = movingWindowForChannel[ch].sum() / movingWindowForChannel[ch].size
+    val closest = notes.toMutableList().findClosest(n)
+    //print("d2=\(d2) -> n=\(n) notes=\(notes) => closest=\(closest)")
+    /*if (prev != movingWindowForChannel[ch]) {
+      println("movingWindowForChannel[$ch] = ${movingWindowForChannel[ch]} prev = $prev => n= $n -  closest = $closest");
+    }
+    */
+    if( closest != null)
+      return closest
+
+    return 0
+  }
+
+  private fun noteToString(note:Int) : String{
+    val o = note/12
+    var nnames = listOf<String>("C","C#","D","D#","E","F","F#","G","G#","A","A#","B")
+    val name = nnames[note % 12]
+    return ""+name+""+o
+  }
+
   // Send a midi message, 3 bytes
-  public fun sendMidi(m: Int, n: Int, v: Int) {
+  fun sendMidi(m: Int, n: Int, v: Int) {
     //println ("AAAA sendMidi ${m} ${n} ${v} ")
+    val ch = m and 0xf;
+    val infos = specialModes[ch] //(channel : Int, mode: Int, notes:[Int], octaves: Int , time: Int, controller: Int)
+    var _m : Int = m
+    var _n : Int = n
+    var _v : Int = v
+    val velocity = 80
+    if(infos?.get("mode") == 1) { //WAND mode
+      if (m and 0xf0 == 0xb0){
+        when (n) {
+          52 -> { //rotation
+            _m = m
+            _n = 11;
+            _v = scaleRotation(30, 80, 0, 127, v)
+            //println("FlutterMidiSynthPlugin.kt sendMidi: scaledRotation: " + _v)
+
+          }
+
+          1 -> {
+            if (infos["continuous"] as Boolean) { //continuous
+              val notes: ArrayList<Int> = infos["notes"] as ArrayList<Int>;
+              var min = notes.toList().minOrNull()
+              var max = notes.toList().maxOrNull()
+              if (min == null) {
+                min = 0
+              }
+              if (max == null) {
+                max = 127
+              }
+
+              //use pitch band to reach next note
+              val scaled = scaleInclination(34,94, 0, 127, v)
+              val note = (max + min) / 2
+
+              //Pitch bend
+              var bend = (scaled*0x4000/127).toInt()
+              if (bend >= 0x4000){
+                bend = 0x4000 -1
+              }
+              val pb_d1 = bend and 0x7f
+              val pb_d2 = (bend shr 7) and 0x7f
+              //sendMidi( (0xE0 or ch), pb_d1, pb_d2)
+              _m = 0xE0 or ch
+              _n = pb_d1
+              _v = pb_d2
+
+              println("FlutterMidiSynthPlugin note "+note+ " (" + noteToString(note) + ") => bend $bend (" + (bend*100/0x4000) + "%) d1 " + _n  + " d2 " + _v)
+
+              if(lastNoteForChannel[ch] != note){
+                sendNoteOn(ch, note, velocity)
+                sendNoteOff(ch, lastNoteForChannel[ch], 0)
+
+                lastNoteForChannel[ch] = note
+              }
+            } else {
+              val notes: ArrayList<Int> = infos["notes"] as ArrayList<Int>;
+              var min = notes.toList().minOrNull()
+              var max = notes.toList().maxOrNull()
+              if (min == null) {
+                min = 0
+              }
+              if (max == null) {
+                max = 127
+              }
+              val scaled = scaleInclination(34, 94, min, max, v)
+              val note = selectNote(scaled.toInt(), ch, notes)
+              val prev = lastNoteForChannel[ch]
+              if (prev != note) {
+                println("FlutterMidiSynthPlugin.kt note = $note prev = $prev")
+                //println("FlutterMidiSynthPlugin.kt midiEvent:" + infos)
+                //synth!.midiEvent(cmd: command, d1: 123, d2: 0) /*turn off current note*/
+                sendNoteOn(ch, note, velocity)
+                sendNoteOff(ch, prev, 0)
+                lastNoteForChannel[ch] = note
+              }
+            }
+          }
+
+        }
+      }
+    }
 
     val msg = ByteArray(3)
-    msg[0] = m.toByte()
-    msg[1] = n.toByte()
-    msg[2] = v.toByte()
+    msg[0] = _m.toByte()
+    msg[1] = _n.toByte()
+    msg[2] = _v.toByte()
     if ( midiBridge.engine != null) midiBridge.write(msg)
   }
 
@@ -400,6 +562,59 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     sendMidi(m + ch, n, vel)
   }
 
+  fun setSpan(channel: Int, notes: MutableList<Int>): Int{
+    var max = notes.toList().maxOrNull()
+    var min = notes.toList().minOrNull()
+    if (max == null){
+      max = 127
+    }
+    if (min == null){
+      min = 0
+    }
+    val span = max - min //semitones span
+    //Setup Pitch Bend Range
+    //CC101 set value 0
+    //CC100 set value 0
+    //CC6 set value for pb range (eg 12 for 12 semitones up / down)
+    sendMidi((0xB0 or channel),  101, 0) //Set Pitch Bend Range RPN
+    sendMidi((0xB0 or channel),  100, 0) //Set Pitch Bend Range RPN
+    sendMidi((0xB0 or channel),  6, (span+1)/2)  //Set Entry Value
+    sendMidi((0xB0 or channel),  101, 127) //RPN Null
+    sendMidi((0xB0 or channel),  100, 127) //RPN Null
+    return span
+  }
 
+  fun setSpecialMode(args: HashMap<String, *>, channel: Int, mode: Int, notes: MutableList<Int>, continuous: kotlin.Boolean, time: Int, controller: Int) {
+
+    val prev_mode = specialModes[channel]?.get("mode")
+    if(prev_mode != mode){
+      println("prev_mode=$prev_mode != mode=$mode")
+      lastNoteForChannel[channel] = 0
+    }
+
+    specialModes[channel] = args
+
+    println("setSpecialMode ch="+channel+" mode="+mode+" notes?"+notes+" continuous="+continuous+" time="+time+" controller="+controller);
+
+    if (continuous && mode == 1){
+      val span = setSpan(channel, notes);
+      println("setSpecialMode continuous Mode: span=$span")
+
+      // Enable/Disable portamento - mode 1 is WAND Mode
+      sendMidi((0xB0 or channel),  65, if (mode == 1) 127 else 0)
+      sendMidi((0xB0 or channel),  5, time) //Portamento time (CC5)
+      //sendMidi((0xB0 or channel),  84, controller) //Portamento Controller (CC84) TEST = 64
+    } else {
+      // Enable/Disable portamento - mode 1 is WAND Mode
+      sendMidi((0xB0 or channel), 65, if (mode == 1) 127 else 0) //Portamento ON/OFF
+      sendMidi((0xB0 or channel), 5, time) //Portamento time (CC5)
+      //sendMidi((0xB0 or channel), 84, controller) //Portamento Controller (CC84) TEST = 64
+    }
+  }
+
+  fun hasSpecialModeWAND(channel: Int) : Boolean {
+    val infos = specialModes[channel]
+    return infos?.get("mode") == 1
+  }
 
 }

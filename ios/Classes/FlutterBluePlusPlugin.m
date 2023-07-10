@@ -776,7 +776,8 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             [@"setReverb" isEqualToString:call.method] ||
             [@"setDelay" isEqualToString:call.method] ||
             [@"initAudioSession" isEqualToString:call.method] ||
-            [@"setAllowedInstrumentsIndexes" isEqualToString:call.method]
+            [@"setAllowedInstrumentsIndexes" isEqualToString:call.method] ||
+            [@"setSpecialMode" isEqualToString:call.method]
         ) {
             [_midiSynth handleMethodCall:call result:result];
         }
@@ -1426,10 +1427,17 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             unsigned char ch = m[1];
             unsigned char d1 = m[2];
             unsigned char d2 = m[3];
+
+            bool filter_accel = true;
+            if(![_midiSynth hasSpecialModeWANDWithChannel:ch]){ /*in WAND mode let the rotation CC pass*/
+                filter_accel &= (d1 != 52);
+            }
+            filter_accel &= (d1 != 53); /*filtering accelerometer y an z*/
+
             //NSLog(@"SNTX value:[status:%02x ch:%02x d1:%02x d2:%02x]", status, ch, d1, d2);
 
             if(status == 0x90 /*NoteON*/ || status == 0x80 /*NoteOFF*/ ||
-                (status >= 0xb0 /*CC*/ && status < 0xc0 /*PrgChg*/ && (d1 != 52 && d1 != 53) /*filtering accelerometer y an z*/ ) ||
+                (status >= 0xb0 /*CC*/ && status < 0xc0 /*PrgChg*/ && filter_accel ) ||
                 (status >= 0xc0 /*PrgChg*/ && status < 0xd0 /*ChPressure*/) ||
                 (status >= 0xd0 /*ChPressure*/ && status < 0xe0 /*Bender*/)
             ){
