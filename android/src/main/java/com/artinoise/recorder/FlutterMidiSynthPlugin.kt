@@ -34,7 +34,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   private var specialModes = HashMap<Int,HashMap<String, *>>()
   private var lastNoteForChannel = mutableListOf<Int>(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
 
-  private var movingWindowDepth = 3
+  private var movingWindowDepth = 1
   private var movingWindowForChannel = mutableListOf(
     mutableListOf<Int>(),
     mutableListOf<Int>(),
@@ -167,8 +167,8 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
 
         println("FlutterMidiSynthplugin: midiEvent cmd="+cmd + " d1=" + d1 + " d2=" + d2)
 
-        if (d2!! > 0) {
-          sendMidi(cmd!!, d1!!, d2!!)
+        if (d2!! >= 0) { //ATTENZIONE ALL NOTES OFF HA D2 == 0
+          sendMidi(cmd!!, d1!!, d2)
         } else {
           sendMidi(cmd!!, d1!!)
         }
@@ -399,13 +399,13 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     return scaled.toInt()
   }
 
-  private fun scaleInclination(fromMin: Int, fromMax: Int, toMin: Int, toMax: Int, value:Int) : Double {
+  private fun scaleInclination(fromMin: Int, fromMax: Int, toMin: Int, toMax: Int, value:Int) : Int {
     if(value < fromMin){
-      return toMin.toDouble()
+      return toMin
     }
     val scaled: Double = toMin.toDouble() + (toMax-toMin).toDouble()*(value-fromMin).toDouble()/(fromMax-fromMin).toDouble()
     //println("scaleInclination fromMin=$fromMin fromMax=$fromMax toMin=$toMin toMax=$toMax v=$value scaled=$scaled ${noteToString(scaled.toInt())}" )
-    return scaled
+    return scaled.toInt()
   }
 
   fun MutableList<Int>.findClosest(input: Int) = fold(null) { acc: Int?, num ->
@@ -413,12 +413,24 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     if (closest == input) return@findClosest closest else return@fold closest
   }
 
+  fun getNote(ch: Int, notes: ArrayList<Int>) : Int? {
+    if (movingWindowForChannel[ch].size == 0)
+      return 0
+
+    if (notes.size == 0)
+      return 0
+
+    println("getNote: ch $ch movingWindowForChannel[ch] ${movingWindowForChannel[ch]} notes $notes")
+    val n = movingWindowForChannel[ch].sum() / movingWindowForChannel[ch].size
+    println("getNote: ch $ch n $n ")
+    return  notes.toMutableList().findClosest(n)
+  }
+
   fun selectNote(note: Int, ch: Int, notes: ArrayList<Int>) : Int {
     val prev = movingWindowForChannel[ch].toList()
     movingWindowForChannel[ch].add(note)
     movingWindowForChannel.set(ch, movingWindowForChannel[ch].takeLast(movingWindowDepth).toMutableList())
-    val n = movingWindowForChannel[ch].sum() / movingWindowForChannel[ch].size
-    val closest = notes.toMutableList().findClosest(n)
+    val closest = getNote(ch, notes)
     //print("d2=\(d2) -> n=\(n) notes=\(notes) => closest=\(closest)")
     /*if (prev != movingWindowForChannel[ch]) {
       println("movingWindowForChannel[$ch] = ${movingWindowForChannel[ch]} prev = $prev => n= $n -  closest = $closest");
@@ -445,7 +457,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     var _m : Int = m
     var _n : Int = n
     var _v : Int = v
-    val velocity = 80
+    val velocity = 100
     if(infos?.get("mode") == 1) { //WAND mode
       if (m and 0xf0 == 0xb0){
         when (n) {
@@ -457,70 +469,63 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
 
           }
 
-          1 -> {
-            if (infos["continuous"] as Boolean) { //continuous
-              val notes: ArrayList<Int> = infos["notes"] as ArrayList<Int>;
-              var min = notes.toList().minOrNull()
-              var max = notes.toList().maxOrNull()
-              if (min == null) {
-                min = 0
-              }
-              if (max == null) {
-                max = 127
-              }
+          1 -> { /*inclination*/
+            val notes: ArrayList<Int> = infos["notes"] as ArrayList<Int>;
+            var note = 0;
 
-              //use pitch band to reach next note
-              val scaled = scaleInclination(34,94, 0, 127, v)
-              val note = (max + min) / 2
+            //use pitch bend to reach next note
+            //val scaled = scaleInclination(34,94, 0, 127, v)
+            var min = notes.toList().minOrNull()
+            var max = notes.toList().maxOrNull()
+            if (min == null) { min = 0 }
+            if (max == null) { max = 127 }
+            var scaled = 0
 
+            //se è continuous uso direttamente il valore v ricevuto
+            // per fare un bend all'interno del noteSpan settato con il CC 6
+            var bend = 0
+            if (infos["continuous"] as Boolean) {
               //Pitch bend
-              var bend = (scaled*0x4000/127).toInt()
-              if (bend >= 0x4000){
-                bend = 0x4000 -1
-              }
-              val pb_d1 = bend and 0x7f
-              val pb_d2 = (bend shr 7) and 0x7f
-              //sendMidi( (0xE0 or ch), pb_d1, pb_d2)
-              _m = 0xE0 or ch
-              _n = pb_d1
-              _v = pb_d2
-
-              println("FlutterMidiSynthPlugin note "+note+ " (" + noteToString(note) + ") => bend $bend (" + (bend*100/0x4000) + "%) d1 " + _n  + " d2 " + _v)
-
-              if(lastNoteForChannel[ch] != note){
-                sendNoteOn(ch, note, velocity)
-                sendNoteOff(ch, lastNoteForChannel[ch], 0)
-
-                lastNoteForChannel[ch] = note
-              }
+              scaled = scaleInclination(0,115, 0, 127, v)
+              note = (max + min) / 2
+              bend = (scaled * 0x4000 / 127).toInt()
             } else {
-              val notes: ArrayList<Int> = infos["notes"] as ArrayList<Int>;
-              var min = notes.toList().minOrNull()
-              var max = notes.toList().maxOrNull()
-              if (min == null) {
-                min = 0
-              }
-              if (max == null) {
-                max = 127
-              }
-              val scaled = scaleInclination(34, 94, min, max, v)
-              val note = selectNote(scaled.toInt(), ch, notes)
-              val prev = lastNoteForChannel[ch]
-              if (prev != note) {
-                println("FlutterMidiSynthPlugin.kt note = $note prev = $prev")
-                //println("FlutterMidiSynthPlugin.kt midiEvent:" + infos)
-                //synth!.midiEvent(cmd: command, d1: 123, d2: 0) /*turn off current note*/
-                sendNoteOn(ch, note, velocity)
-                sendNoteOff(ch, prev, 0)
-                lastNoteForChannel[ch] = note
+              // Se è !continuous devo calcolare la distanza dalle note più vicine
+              // e raggiungere il target con un bend manuale
+              scaled = scaleInclination(0,115, min, max, v)
+              note = selectNote(scaled.toInt(), ch, notes)
+              val distance = (note - lastNoteForChannel[ch])
+              val span = 1 + max - min //semitones span, including upper octave rootnote
+              val pps = 16384/span
+              bend = distance*pps + 8196
+              //val calculated_note = lastNoteForChannel[ch] + ((bend - 8196)*(max-min))/16384
+              println("FlutterMidiSynthPlugin => Quantized mode: note $note, lastNoteForChannel[ch] ${lastNoteForChannel[ch]}, distance $distance => bend $bend d=${bend-8196}")
+            }
+
+            if (bend >= 16384){ bend = 16384 -1 }
+            if (bend <= 0){ bend = 0 }
+
+            _m = 0xE0 or ch
+            _n = bend and 0x7f
+            _v = (bend shr 7) and 0x7f
+
+            //println("FlutterMidiSynthPlugin v $v  => bend $bend (" + (bend*100/0x4000) + "%) d1 " + _n  + " d2 " + _v)
+
+            if(lastNoteForChannel[ch] != note){
+              if (!(infos["continuous"] as Boolean) && lastNoteForChannel[ch] !=0) { //quantized
+                //nothing to do
+              } else {
+                sendNoteOff(ch, lastNoteForChannel[ch], 0)
+                lastNoteForChannel[ch] = (max + min) / 2
+                println("FlutterMidiSynthPlugin lastNoteForChannel[ch] != note sending new noteON for ${lastNoteForChannel[ch]}");
+                sendNoteOn(ch, lastNoteForChannel[ch], velocity)
               }
             }
-          }
 
+          }
         }
       }
     }
-
     val msg = ByteArray(3)
     msg[0] = _m.toByte()
     msg[1] = _n.toByte()
@@ -562,7 +567,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     sendMidi(m + ch, n, vel)
   }
 
-  fun setSpan(channel: Int, notes: MutableList<Int>): Int{
+  fun setSpan(channel: Int, notes: MutableList<Int>, symmetric: Boolean): Int{
     var max = notes.toList().maxOrNull()
     var min = notes.toList().minOrNull()
     if (max == null){
@@ -571,14 +576,16 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     if (min == null){
       min = 0
     }
-    val span = max - min //semitones span
+    val span = 1 + max - min //semitones span
+    val pps = 16384/span
+    println("setSpan: ch $channel notes $notes symmetric $symmetric => span $span pps $pps")
     //Setup Pitch Bend Range
     //CC101 set value 0
     //CC100 set value 0
     //CC6 set value for pb range (eg 12 for 12 semitones up / down)
     sendMidi((0xB0 or channel),  101, 0) //Set Pitch Bend Range RPN
     sendMidi((0xB0 or channel),  100, 0) //Set Pitch Bend Range RPN
-    sendMidi((0xB0 or channel),  6, (span+1)/2)  //Set Entry Value
+    sendMidi((0xB0 or channel),  6, span/2)  //Set Entry Value
     sendMidi((0xB0 or channel),  101, 127) //RPN Null
     sendMidi((0xB0 or channel),  100, 127) //RPN Null
     return span
@@ -587,23 +594,27 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   fun setSpecialMode(args: HashMap<String, *>, channel: Int, mode: Int, notes: MutableList<Int>, continuous: kotlin.Boolean, time: Int, controller: Int) {
 
     val prev_mode = specialModes[channel]?.get("mode")
-    if(prev_mode != mode){
-      println("prev_mode=$prev_mode != mode=$mode")
+    if(prev_mode != mode || !continuous){
+      println("prev_mode=$prev_mode mode=$mode continuous=$continuous")
       lastNoteForChannel[channel] = 0
     }
+
+    sendMidi((0xB0 or channel),  123, 0) //ALL NOTES OFF
 
     specialModes[channel] = args
 
     println("setSpecialMode ch="+channel+" mode="+mode+" notes?"+notes+" continuous="+continuous+" time="+time+" controller="+controller);
 
-    if (continuous && mode == 1){
-      val span = setSpan(channel, notes);
+    if (/*continuous &&*/ mode == 1){  //mode 1 is WAND Mode
+      val span = setSpan(channel, notes, true);
       println("setSpecialMode continuous Mode: span=$span")
 
       // Enable/Disable portamento - mode 1 is WAND Mode
       sendMidi((0xB0 or channel),  65, if (mode == 1) 127 else 0)
       sendMidi((0xB0 or channel),  5, time) //Portamento time (CC5)
       //sendMidi((0xB0 or channel),  84, controller) //Portamento Controller (CC84) TEST = 64
+
+      sendNoteOn(channel, lastNoteForChannel[channel], 100)
     } else {
       // Enable/Disable portamento - mode 1 is WAND Mode
       sendMidi((0xB0 or channel), 65, if (mode == 1) 127 else 0) //Portamento ON/OFF
