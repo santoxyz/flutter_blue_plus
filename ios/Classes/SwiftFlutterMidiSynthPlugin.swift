@@ -21,7 +21,7 @@ import Foundation
 
     var lastNoteForChannel: [UInt32] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     var movingWindowForChannel: [[Int]] = [[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]]
-    let movingWindowDepth = 5
+    let movingWindowDepth = 1
 
     typealias specialModeInfos = (channel : UInt32, mode: UInt32, notes:[Int], continuous: Bool , time: UInt32, controller: UInt32)
     var specialModes = [Int:specialModeInfos]() //[channel, specialModeInfos]
@@ -112,15 +112,15 @@ import Foundation
         return UInt32(scaled)
     }
 
-    private func scaleInclination(fromMin: Int, fromMax: Int, toMin: Int, toMax: Int, value:UInt32) -> Double {
+    private func scaleInclination(fromMin: Int, fromMax: Int, toMin: Int, toMax: Int, value:UInt32) -> Int {
         if(value < fromMin){
-            return Double(toMin)
+            return toMin
         }
         
         let scaled: Double = Double(toMin) + Double(toMax-toMin)*Double(Int(value)-fromMin)/Double(fromMax-fromMin)
         //print("scaleInclination fromMin=\(fromMin) fromMax=\(fromMax) toMin=\(toMin) toMax=\(toMax) v=\(value) scaled=\(scaled) \(noteToString(note:UInt32(scaled)))" )
         
-        return scaled
+        return Int(scaled)
     }
     
     private func xpressionAvg(ch: Int, value: UInt32) -> UInt32{
@@ -262,7 +262,7 @@ import Foundation
         
         let specialModeInfos = specialModes[Int(channel)]
         if (specialModeInfos?.1 == 1 /*WAND*/ && specialModeInfos?.3 == true /*continuous*/){
-            noteOn(channel: channel, note: Int(lastNoteForChannel[channel]), velocity: 80)
+            noteOn(channel: channel, note: Int(lastNoteForChannel[channel]), velocity: 100)
         }
 
     }
@@ -317,7 +317,7 @@ import Foundation
         //let now = (Int64)(NSDate().timeIntervalSince1970*1000)
         //print("\(now) SwiftFlutterMidiSyntPlugin.swift noteOff \(channel)  \(note) \(velocity) ")
     }
-    
+
     public func selectNote(d2: UInt32, ch: UInt32, notes: [Int]) -> UInt32 {
 
         movingWindowForChannel[Int(ch)].append(Int(d2))
@@ -344,7 +344,7 @@ import Foundation
 
         let ch = Int(command & 0xf)
         let infos = specialModes[ch] //(channel : Int, mode: Int, notes:[Int], continuous: Bool , time: Int, controller: Int)
-        let velocity = 80
+        let velocity = 100
         //print("SwiftFlutterMidiSyntPlugin.swift midiEvent \(infos)")
         if (infos?.1 == 1){ //WAND MODE
             if(command & 0xf0 == 0xb0){
@@ -355,42 +355,56 @@ import Foundation
                     synth!.midiEvent(cmd: command, d1: _d1, d2: _d2)
                     
                 case 1: /*inclination*/
+                    let notes = infos?.2 ?? []
+                    var note = 0
+
+                    //use pitch bend to reach next note
+                    var min_note = notes.min() ?? 0
+                    var max_note = notes.max() ?? 127
+                    var scaled = 0
+                    // se è continuous uso direttamente il valore v ricevuto
+                    // per fare un bend all'interno del noteSpan settato con il CC 6
+                    var bend = 0
                     if ((infos?.3)!) { //continuous
-                        //use pitch band to reach next note
-                        let min_note = (infos?.2)!.min()
-                        let max_note = (infos?.2)!.max()
-                        let scaled = scaleInclination(fromMin: 34, fromMax: 94, toMin: 0, toMax: 127, value: d2)
-                        let uscaled = UInt32(scaled)
-                        let note = UInt32((max_note! + min_note!) / 2)
-
                         //Pitch bend
-                        let bend = UInt32(uscaled*0x4000/127)
-                        let pb_d1 = bend & 0x7f
-                        let pb_d2 = (bend >> 8) & 0x7f
-                        synth!.midiEvent(cmd: 0xE0 | UInt32(ch), d1: pb_d1, d2: pb_d2)
-                        print("SwiftFlutterMidiSynthPlugin.swift note \(note) (\(noteToString(note:note))) => bend \(bend*100/0x4000)% d1 \(d1) d2 \(d2)")
+                        scaled = scaleInclination(fromMin: 0, fromMax: 115, toMin: 0, toMax: 127, value: d2)
+                        let uscaled = UInt32(scaled)
+                        note = Int((max_note + min_note) / 2)
+                        bend = Int(uscaled*0x4000/127)
+                        print("SwiftFlutterMidiSynthPlugin.swift Continuous mode: d2 \(d2) uscaled \(uscaled) => note \(note) (\(noteToString(note:UInt32(note))) lastNoteForChannel[\(ch)] \(lastNoteForChannel[ch]) => bend \(bend)")
 
-                        if(lastNoteForChannel[ch] != note){
-                            noteOn(channel:ch, note:Int(note), velocity:velocity)
-                            noteOff(channel: ch, note: Int(lastNoteForChannel[ch]), velocity: 0)
-
-                            lastNoteForChannel[ch] = note
-                        }
-                        
                     } else {
-                        let notes = infos?.2 ?? []
-                        let scaled = scaleInclination(fromMin: 34, fromMax: 94, toMin: notes.min() ?? 0, toMax: notes.max() ?? 127, value: d2)
-                        let note = selectNote(d2:UInt32(scaled), ch:UInt32(ch), notes:notes)
-                        if(lastNoteForChannel[ch] != note){
-                            print("SwiftFlutterMidiSynthPlugin.swift note \(note) (\(noteToString(note:note))) midiEvent \(infos)")
-                            //synth!.midiEvent(cmd: command, d1: 123, d2: 0) /*turn off current note*/
+                        // Se è !continuous devo calcolare la distanza dalle note più vicine
+                        // e raggiungere il target con un bend manuale
+                        scaled = scaleInclination(fromMin: 0, fromMax: 115, toMin: min_note, toMax: max_note, value: d2)
+                        note = Int(selectNote(d2:UInt32(scaled), ch:UInt32(ch), notes:notes))
+                        let distance = note - Int(lastNoteForChannel[ch])
+                        let span = 1 + max_note - min_note //semitones span, including upper octave rootnote
+                        let pps = 16384/span
+                        bend = distance*pps + 8196
+                        //let calculated_note = Int(lastNoteForChannel[ch]) + ((bend - 8196)*pps)/16384
+                        print("SwiftFlutterMidiSynthPlugin.swift Quantized mode: note \(note) (\(noteToString(note:UInt32(note))) centralNote[\(ch)] \(lastNoteForChannel[ch]) distance \(distance) => bend \(bend) (d=\(bend-8196)")
+                    }
 
-                            noteOn(channel:ch, note:Int(note), velocity:velocity)
+                    if (bend >= 16384) {bend = 16384-1}
+                    if (bend <= 0) {bend = 0}
+
+                    let pb_d1 = UInt32(bend) & 0x7f
+                    let pb_d2 = (UInt32(bend) >> 7) & 0x7f
+                    synth!.midiEvent(cmd: 0xE0 | UInt32(ch), d1: UInt32(pb_d1), d2: UInt32(pb_d2))
+                    //print("SwiftFlutterMidiSynthPlugin.swift pb_d1 \(pb_d1) pb_d2 \(pb_d2)")
+
+                    if(lastNoteForChannel[ch] != note){
+                        if (!(infos?.3)! && lastNoteForChannel[ch] != 0) { //quantized
+                            //nothing to do
+                        } else {
+                            print("SwiftFlutterMidiSynthPlugin.swift note \(note) != \(lastNoteForChannel[ch]) - sending new noteON for \(lastNoteForChannel[ch])")
                             noteOff(channel: ch, note: Int(lastNoteForChannel[ch]), velocity: 0)
-
-                            lastNoteForChannel[ch] = note
+                            lastNoteForChannel[ch] = UInt32( (max_note + min_note) / 2)
+                            noteOn(channel:ch, note:Int(lastNoteForChannel[ch]), velocity:velocity)
                         }
                     }
+
                 default:
                     break
                 }
@@ -418,24 +432,27 @@ import Foundation
     public func setSpecialMode(channel: UInt32, mode: UInt32, notes: [Int], continuous: Bool, time: UInt32, controller: UInt32){
         let infos : specialModeInfos = (channel: channel, mode: mode, notes: notes, continuous: continuous, time: time, controller: controller)
         let prev_mode = specialModes[Int(channel)]?.1
-        if(prev_mode != mode){
+        if(prev_mode != mode || !continuous){
             lastNoteForChannel[Int(channel)] = 0;
         }
 
+        synth!.midiEvent(cmd: 0xB0 | channel, d1: 123, d2: 0) //ALL NOTES OFF
+
         specialModes[Int(channel)] = infos
 
-        print("setSpecialMode mode \(mode) on channel \(channel) - notes \(notes) continuous \(continuous) time \(time) controller \(controller)")
-        
-        if(continuous && mode == 1){
-            let span = notes.max()! - notes.min()! //semitones span
-            
+
+        if(/*continuous &&*/ mode == 1){
+            let span = 1 + notes.max()! - notes.min()! //semitones span, notes includes upper octave rootnote
+            let pps = 16384/span
+            print("setSpecialMode mode \(mode) on channel \(channel) - notes \(notes) span \(span) (\(pps) points/semitone) continuous \(continuous) time \(time) controller \(controller)")
+
             //Setup Pitch Bend Range
             //CC101 set value 0
             //CC100 set value 0
             //CC6 set value for pb range (eg 12 for 12 semitones up / down)
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 101, d2: 0) //Set Pitch Bend Range RPN
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 100, d2: 0) //Set Pitch Bend Range RPN
-            synth!.midiEvent(cmd: 0xB0 | channel, d1: 6, d2: UInt32((span+1)/2))  //Set Entry Value
+            synth!.midiEvent(cmd: 0xB0 | channel, d1: 6, d2: UInt32((span/2)))  //Set Entry Value
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 101, d2: 127) //RPN Null
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 100, d2: 127) //RPN Null
 
@@ -443,6 +460,8 @@ import Foundation
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 65, d2: mode == 1 ? 127 : 0)
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 5, d2: time) //Portamento time (CC5)
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 84, d2: controller /*note*/ /*infos?.5*/ /*?? 0*/) //Portamento Controller (CC84) TEST = 64
+
+            noteOn(channel:Int(channel), note: Int(lastNoteForChannel[Int(channel)]), velocity: 80)
 
         } else {
             // Enable/Disable portamento - mode 1 is WAND Mode
