@@ -10,7 +10,10 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import java.util.*
 import java.util.HashMap
 import java.lang.*
+import java.lang.Thread
 import java.util.ArrayList
+import kotlinx.coroutines.*
+import java.util.concurrent.TimeUnit
 
 /** FlutterMidiSynthPlugin */
 public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, MethodCallHandler,*/ /* MidiDriver.OnMidiStartListener,*/
@@ -53,6 +56,10 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     mutableListOf<Int>(),
     mutableListOf<Int>(),
   )
+
+  private var bendForChannel = mutableListOf<Int>(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+  private var targetBendForChannel = mutableListOf<Int>(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+  private var backgroundBendTaskIsRunning = false
 
   //NO MORE used as a plugin
   /*
@@ -102,6 +109,34 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   }
 
   */
+
+  private fun backgroundBendTask(){
+    while (backgroundBendTaskIsRunning){
+      for (ch in 0 until bendForChannel.size-1) {
+        if (/*targetBendForChannel[ch] != 0 &&*/ bendForChannel[ch] != targetBendForChannel[ch]){
+          if(specialModes[ch]?.get("time") == 0 || bendForChannel[ch] == 0){
+            bendForChannel[ch] = targetBendForChannel[ch]
+          }
+          val pb_d1 = bendForChannel[ch] and 0x7f
+          val pb_d2 = (bendForChannel[ch] shr 7) and 0x7f
+          val msg = ByteArray(3)
+          msg[0] = (0xE0 or ch).toByte()
+          msg[1] = pb_d1.toByte()
+          msg[2] = pb_d2.toByte()
+          if ( midiBridge.engine != null) midiBridge.write(msg)
+
+          if(bendForChannel[ch] < targetBendForChannel[ch]){
+            bendForChannel[ch] = bendForChannel[ch] + 1
+          } else if (bendForChannel[ch] > targetBendForChannel[ch]){
+            bendForChannel[ch] = bendForChannel[ch] - 1
+          }
+          java.util.concurrent.TimeUnit.NANOSECONDS.sleep(100)
+          //print("BackgroundBendTask: ch $ch bend ${bendForChannel[ch]} target ${targetBendForChannel[ch]}\n")
+        }
+      }
+    }
+    println("backgroundBendTask stopped.")
+  }
 
   override fun onDetachedFromActivity() {
     TODO("Not yet implemented")
@@ -458,6 +493,8 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     var _n : Int = n
     var _v : Int = v
     val velocity = 100
+    var send = true
+
     if(infos?.get("mode") == 1) { //WAND mode
       if (m and 0xf0 == 0xb0){
         when (n) {
@@ -495,19 +532,25 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
               scaled = scaleInclination(0,115, min, max, v)
               note = selectNote(scaled.toInt(), ch, notes)
               val distance = (note - lastNoteForChannel[ch])
-              val span = 1 + max - min //semitones span, including upper octave rootnote
-              val pps = 16384/span
-              bend = distance*pps + 8196
+              val span = max - min //semitones span, including upper octave rootnote
+              val pps = 16384.0/span
+              bend = (distance*pps).toInt() + 8192
               //val calculated_note = lastNoteForChannel[ch] + ((bend - 8196)*(max-min))/16384
-              println("FlutterMidiSynthPlugin => Quantized mode: note $note, lastNoteForChannel[ch] ${lastNoteForChannel[ch]}, distance $distance => bend $bend d=${bend-8196}")
+              println("FlutterMidiSynthPlugin => Quantized mode: note $note, lastNoteForChannel[ch] ${lastNoteForChannel[ch]}, distance $distance pps $pps => bend $bend d=${bend-8196}")
             }
 
             if (bend >= 16384){ bend = 16384 -1 }
             if (bend <= 0){ bend = 0 }
 
-            _m = 0xE0 or ch
-            _n = bend and 0x7f
-            _v = (bend shr 7) and 0x7f
+            //BackgroundThread impl
+            if(true) {
+              targetBendForChannel[ch] = bend
+              send = false
+            } else {
+              _m = 0xE0 or ch
+              _n = bend and 0x7f
+              _v = (bend shr 7) and 0x7f
+            }
 
             //println("FlutterMidiSynthPlugin v $v  => bend $bend (" + (bend*100/0x4000) + "%) d1 " + _n  + " d2 " + _v)
 
@@ -523,14 +566,24 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
             }
 
           }
+
+          5 -> { //Portamento Time
+            var map = specialModes[ch]?.toMutableMap()
+            map?.set("time", v)
+            specialModes[ch] = HashMap(map)
+          }
         }
       }
     }
-    val msg = ByteArray(3)
-    msg[0] = _m.toByte()
-    msg[1] = _n.toByte()
-    msg[2] = _v.toByte()
-    if ( midiBridge.engine != null) midiBridge.write(msg)
+
+    if(send) {
+      val msg = ByteArray(3)
+      msg[0] = _m.toByte()
+      msg[1] = _n.toByte()
+      msg[2] = _v.toByte()
+      if (midiBridge.engine != null) midiBridge.write(msg)
+    }
+
   }
 
   public fun sendMidiWithMAC(m: Int, n: Int, v: Int, mac: String?) {
@@ -576,8 +629,8 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     if (min == null){
       min = 0
     }
-    val span = 1 + max - min //semitones span
-    val pps = 16384/span
+    val span = max - min //semitones span
+    val pps = 16384.0/span
     println("setSpan: ch $channel notes $notes symmetric $symmetric => span $span pps $pps")
     //Setup Pitch Bend Range
     //CC101 set value 0
@@ -606,20 +659,28 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     println("setSpecialMode ch="+channel+" mode="+mode+" notes?"+notes+" continuous="+continuous+" time="+time+" controller="+controller);
 
     if (/*continuous &&*/ mode == 1){  //mode 1 is WAND Mode
+      if(backgroundBendTaskIsRunning == false){
+        GlobalScope.async {
+          backgroundBendTaskIsRunning = true
+          backgroundBendTask()
+        }
+      }
+
       val span = setSpan(channel, notes, true);
       println("setSpecialMode continuous Mode: span=$span")
 
       // Enable/Disable portamento - mode 1 is WAND Mode
-      sendMidi((0xB0 or channel),  65, if (mode == 1) 127 else 0)
-      sendMidi((0xB0 or channel),  5, time) //Portamento time (CC5)
+      //sendMidi((0xB0 or channel),  65, if (mode == 1) 127 else 0)
+      //sendMidi((0xB0 or channel),  5, time) //Portamento time (CC5)
       //sendMidi((0xB0 or channel),  84, controller) //Portamento Controller (CC84) TEST = 64
 
       sendNoteOn(channel, lastNoteForChannel[channel], 100)
     } else {
       // Enable/Disable portamento - mode 1 is WAND Mode
-      sendMidi((0xB0 or channel), 65, if (mode == 1) 127 else 0) //Portamento ON/OFF
-      sendMidi((0xB0 or channel), 5, time) //Portamento time (CC5)
+      //sendMidi((0xB0 or channel), 65, if (mode == 1) 127 else 0) //Portamento ON/OFF
+      //sendMidi((0xB0 or channel), 5, time) //Portamento time (CC5)
       //sendMidi((0xB0 or channel), 84, controller) //Portamento Controller (CC84) TEST = 64
+      backgroundBendTaskIsRunning = false
     }
   }
 

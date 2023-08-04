@@ -22,9 +22,11 @@ import Foundation
     var lastNoteForChannel: [UInt32] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     var movingWindowForChannel: [[Int]] = [[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]]
     let movingWindowDepth = 1
-
+    var bendForChannel: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    var targetBendForChannel: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     typealias specialModeInfos = (channel : UInt32, mode: UInt32, notes:[Int], continuous: Bool , time: UInt32, controller: UInt32)
     var specialModes = [Int:specialModeInfos]() //[channel, specialModeInfos]
+    var backgroundBendTaskIsRunning: Bool = false
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "FlutterMidiSynthPlugin", binaryMessenger: registrar.messenger())
@@ -217,7 +219,8 @@ import Foundation
                 print ("background loading of voices completed." )
             }
         }
-        
+
+
     }
     
     private func getSequencer(channel: Int) -> Sequencer{
@@ -302,7 +305,7 @@ import Foundation
         lastNoteOnOff = NOTE_ON
         synth!.playNoteOn(channel: channel, note: UInt8(note), midiVelocity: _velocity, sequencer: sequencer)
         sequencer.noteOn(note: UInt8(note))
-        let now = (Int64)(NSDate().timeIntervalSince1970*1000)
+        //let now = (Int64)(NSDate().timeIntervalSince1970*1000)
         //print("\(now) SwiftFlutterMidiSyntPlugin.swift noteOn \(channel)  \(note) \(velocity) ")
     }
     
@@ -333,6 +336,34 @@ import Foundation
         var nnames: [String] = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
         let name = nnames[Int(note % 12)]
         return "\(name)\(o)"
+    }
+
+    private func backgroundBendTask() {
+        while(backgroundBendTaskIsRunning){
+            for ch in 0...bendForChannel.count-1 {
+              if (/*targetBendForChannel[ch] != 0 &&*/ bendForChannel[ch] != targetBendForChannel[ch]){
+                if(Int(specialModes[ch]!.time) == 0 || bendForChannel[ch] == 0){
+                    bendForChannel[ch] = targetBendForChannel[ch]
+                }
+                let pb_d1 = UInt32(bendForChannel[ch]) & 0x7f
+                let pb_d2 = (UInt32(bendForChannel[ch]) >> 7) & 0x7f
+                synth!.midiEvent(cmd: 0xE0 | UInt32(ch), d1: UInt32(pb_d1), d2: UInt32(pb_d2))
+                if(bendForChannel[ch] < targetBendForChannel[ch]){
+                    bendForChannel[ch] = bendForChannel[ch] + 1
+                } else if (bendForChannel[ch] > targetBendForChannel[ch]) {
+                    bendForChannel[ch] = bendForChannel[ch] - 1
+                }
+                Thread.sleep(forTimeInterval: 0.000000100 * Double(Int(specialModes[ch]!.time)))
+                //print("ch \(ch) bend \(bendForChannel[ch]) target \(targetBendForChannel[ch])")
+              }
+              /*else {
+                  //sleep
+                  try await Task.sleep(nanoseconds: 1_000)
+              }*/
+            }
+        }
+        
+        print("backgroundBendTask stopped.");
     }
 
     public func midiEvent(command: UInt32, d1: UInt32, d2: UInt32){
@@ -379,31 +410,40 @@ import Foundation
                         scaled = scaleInclination(fromMin: 0, fromMax: 115, toMin: min_note, toMax: max_note, value: d2)
                         note = Int(selectNote(d2:UInt32(scaled), ch:UInt32(ch), notes:notes))
                         let distance = note - Int(lastNoteForChannel[ch])
-                        let span = 1 + max_note - min_note //semitones span, including upper octave rootnote
-                        let pps = 16384/span
-                        bend = distance*pps + 8196
+                        let span = max_note - min_note //semitones span, including upper octave rootnote
+                        let pps = 16384.0/Double(span)
+                        bend = Int(Double(distance)*pps) + 8192
                         //let calculated_note = Int(lastNoteForChannel[ch]) + ((bend - 8196)*pps)/16384
-                        print("SwiftFlutterMidiSynthPlugin.swift Quantized mode: note \(note) (\(noteToString(note:UInt32(note))) centralNote[\(ch)] \(lastNoteForChannel[ch]) distance \(distance) => bend \(bend) (d=\(bend-8196)")
+                        print("SwiftFlutterMidiSynthPlugin.swift Quantized mode: note \(note) (\(noteToString(note:UInt32(note))) centralNote[\(ch)] \(lastNoteForChannel[ch]) distance \(distance) pps \(pps) => bend \(bend) (d=\(bend-8196))")
                     }
 
                     if (bend >= 16384) {bend = 16384-1}
                     if (bend <= 0) {bend = 0}
 
-                    let pb_d1 = UInt32(bend) & 0x7f
-                    let pb_d2 = (UInt32(bend) >> 7) & 0x7f
-                    synth!.midiEvent(cmd: 0xE0 | UInt32(ch), d1: UInt32(pb_d1), d2: UInt32(pb_d2))
+                    if #available(iOS 13.0.0, *) {
+                        targetBendForChannel[ch] = bend
+                    } else {
+                        let pb_d1 = UInt32(bend) & 0x7f
+                        let pb_d2 = (UInt32(bend) >> 7) & 0x7f
+                        synth!.midiEvent(cmd: 0xE0 | UInt32(ch), d1: UInt32(pb_d1), d2: UInt32(pb_d2))
+                    }
                     //print("SwiftFlutterMidiSynthPlugin.swift pb_d1 \(pb_d1) pb_d2 \(pb_d2)")
 
                     if(lastNoteForChannel[ch] != note){
-                        if (!(infos?.3)! && lastNoteForChannel[ch] != 0) { //quantized
+                        if (!(infos?.3)! && lastNoteForChannel[ch] != 0) {
                             //nothing to do
                         } else {
-                            print("SwiftFlutterMidiSynthPlugin.swift note \(note) != \(lastNoteForChannel[ch]) - sending new noteON for \(lastNoteForChannel[ch])")
+                            print("SwiftFlutterMidiSynthPlugin.swift note \(note) != \(lastNoteForChannel[ch]) -> ")
                             noteOff(channel: ch, note: Int(lastNoteForChannel[ch]), velocity: 0)
                             lastNoteForChannel[ch] = UInt32( (max_note + min_note) / 2)
+                            print("SwiftFlutterMidiSynthPlugin.swift    -> sending new noteON for \(lastNoteForChannel[ch])")
                             noteOn(channel:ch, note:Int(lastNoteForChannel[ch]), velocity:velocity)
                         }
                     }
+                case 5: //Portamento Time
+                    //synth!.midiEvent(cmd: command, d1: _d1, d2: _d2)
+                    specialModes[ch]?.time = _d2
+
 
                 default:
                     break
@@ -411,7 +451,7 @@ import Foundation
             }
 
         } else {
-            if(command & 0xf0 == 0xb0 && d1 == 11){
+            if(command & 0xf0 == 0xb0 && d1 == 11) {
                 //print("SwiftFlutterMidiSyntPlugin.swift midiEvent \(command)  \(d1) \(d2) (RAW) ")
                 //_d2 = xpressionAvg(ch: Int(command & 0xf), value: _d2)
                 _d2 = scaleXpression(min:25, max:110, value: _d2)
@@ -440,9 +480,15 @@ import Foundation
 
         specialModes[Int(channel)] = infos
 
-
         if(/*continuous &&*/ mode == 1){
-            let span = 1 + notes.max()! - notes.min()! //semitones span, notes includes upper octave rootnote
+            if(backgroundBendTaskIsRunning == false){
+                DispatchQueue.global(qos: .background).async {
+                    self.backgroundBendTaskIsRunning = true
+                    self.backgroundBendTask();
+                }
+            }
+            
+            let span = notes.max()! - notes.min()! //semitones span, notes includes upper octave rootnote
             let pps = 16384/span
             print("setSpecialMode mode \(mode) on channel \(channel) - notes \(notes) span \(span) (\(pps) points/semitone) continuous \(continuous) time \(time) controller \(controller)")
 
@@ -452,22 +498,23 @@ import Foundation
             //CC6 set value for pb range (eg 12 for 12 semitones up / down)
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 101, d2: 0) //Set Pitch Bend Range RPN
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 100, d2: 0) //Set Pitch Bend Range RPN
-            synth!.midiEvent(cmd: 0xB0 | channel, d1: 6, d2: UInt32((span/2)))  //Set Entry Value
+            synth!.midiEvent(cmd: 0xB0 | channel, d1: 6, d2: UInt32(span/2))  //Set Entry Value
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 101, d2: 127) //RPN Null
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 100, d2: 127) //RPN Null
 
             // Enable/Disable portamento - mode 1 is WAND Mode
-            synth!.midiEvent(cmd: 0xB0 | channel, d1: 65, d2: mode == 1 ? 127 : 0)
-            synth!.midiEvent(cmd: 0xB0 | channel, d1: 5, d2: time) //Portamento time (CC5)
+            //synth!.midiEvent(cmd: 0xB0 | channel, d1: 65, d2: mode == 1 ? 127 : 0)
+            //synth!.midiEvent(cmd: 0xB0 | channel, d1: 5, d2: time) //Portamento time (CC5)
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 84, d2: controller /*note*/ /*infos?.5*/ /*?? 0*/) //Portamento Controller (CC84) TEST = 64
 
-            noteOn(channel:Int(channel), note: Int(lastNoteForChannel[Int(channel)]), velocity: 80)
+            noteOn(channel:Int(channel), note: Int(lastNoteForChannel[Int(channel)]), velocity: 100)
 
         } else {
             // Enable/Disable portamento - mode 1 is WAND Mode
-            synth!.midiEvent(cmd: 0xB0 | channel, d1: 65, d2: mode == 1 ? 127 : 0)
-            synth!.midiEvent(cmd: 0xB0 | channel, d1: 5, d2: time) //Portamento time (CC5)
+            //synth!.midiEvent(cmd: 0xB0 | channel, d1: 65, d2: mode == 1 ? 127 : 0)
+            //synth!.midiEvent(cmd: 0xB0 | channel, d1: 5, d2: time) //Portamento time (CC5)
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 84, d2: controller /*note*/ /*infos?.5*/ /*?? 0*/) //Portamento Controller (CC84) TEST = 64
+            backgroundBendTaskIsRunning = false
         }
     }
     
