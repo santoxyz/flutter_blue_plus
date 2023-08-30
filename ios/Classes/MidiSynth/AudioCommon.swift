@@ -116,7 +116,7 @@ class AudioCommon
   }
   
     func setVolume(val: Float){
-        print("setVolume \(val)")
+        print("AudioCommon.swift setVolume \(val)")
 
         var busCount:UInt32   = 1    // bus count for mixer unit input
         let status = AudioUnitSetProperty (mixerUnit!,
@@ -128,12 +128,12 @@ class AudioCommon
                                        )
         
         var res =
-        AudioUnitSetParameter(mixerUnit!, kAudioUnitScope_Global, 0, kMultiChannelMixerParam_Volume, Float(val), 0)
+        AudioUnitSetParameter(mixerUnit!, kMultiChannelMixerParam_Volume, kAudioUnitScope_Global, 0, Float(val), 0)
         print("set global vol res=\(res)")
         res = AudioUnitSetParameter(mixerUnit!, kMultiChannelMixerParam_Enable, kAudioUnitScope_Input, 0 /*bus number*/, 1 /*on*/, 0)
         print("set input enable res=\(res)")
-        res = AudioUnitSetParameter(mixerUnit!, kMultiChannelMixerParam_Enable, kAudioUnitScope_Output, 0 /*bus number*/, 1 /*on*/, 0)
-        print("set output enable res=\(res)")
+        //res = AudioUnitSetParameter(mixerUnit!, kMultiChannelMixerParam_Enable, kAudioUnitScope_Output, 0 /*bus number*/, 1 /*on*/, 0)
+        //print("set output enable res=\(res)")
         res = AudioUnitSetParameter(mixerUnit!, kMultiChannelMixerParam_Volume, kAudioUnitScope_Input, 0 /*bus number*/,Float(val) /*gain*/, 0)
         print("set input vol res=\(res)")
         res = AudioUnitSetParameter(mixerUnit!, kMultiChannelMixerParam_Volume, kAudioUnitScope_Output, 0 /*bus number*/,Float(val) /*gain*/, 0)
@@ -142,7 +142,7 @@ class AudioCommon
     }
     
     func setReverb(dryWet: Float){
-        print("setReverb \(dryWet)")
+        print("AudioCommon.swift setReverb \(dryWet)")
 
         //Configurable parameters:
         /*
@@ -156,16 +156,16 @@ class AudioCommon
         */
         
         // set the decay time at 0 Hz to 1 seconds
-        AudioUnitSetParameter(reverbUnit!, kAudioUnitScope_Global, 0, kReverb2Param_DecayTimeAt0Hz, Float(1.0), 0);
+        AudioUnitSetParameter(reverbUnit!, kReverb2Param_DecayTimeAt0Hz, kAudioUnitScope_Global, 0,  Float(1.0), 0);
         // set the decay time at Nyquist to 2.5 seconds
-        AudioUnitSetParameter(reverbUnit!, kAudioUnitScope_Global, 0, kReverb2Param_DecayTimeAtNyquist, Float(0.5), 0);
+        AudioUnitSetParameter(reverbUnit!, kReverb2Param_DecayTimeAtNyquist, kAudioUnitScope_Global, 0,  Float(0.5), 0);
         
         //kReverb2Param_DryWetMix 0.0-100.0
-         AudioUnitSetParameter(reverbUnit!, kAudioUnitScope_Global, 0, kReverb2Param_DryWetMix, dryWet, 0);
+         AudioUnitSetParameter(reverbUnit!, kReverb2Param_DryWetMix, kAudioUnitScope_Global, 0,  dryWet, 0);
     }
     
     func setDelay(dryWet: Float){
-        print("setDelay \(dryWet)")
+        print("AudioCommon.swift setDelay \(dryWet)")
         //Configurable parameters:
         /*
         kDelayParam_Feedback
@@ -186,7 +186,6 @@ class AudioCommon
         //AudioUnitSetParameter(delayUnit!, kAudioUnitScope_Global, 0, kDelayParam_WetDryMix, dryWet, 0);
         AudioUnitSetParameter(delayUnit!, kDelayParam_WetDryMix, kAudioUnitScope_Global, 0, dryWet,0);
 
-        
         // set the LopassCutoff amount in Hz
         //AudioUnitSetParameter(delayUnit!, kAudioUnitScope_Global, 0, kDelayParam_LopassCutoff, 15_000, 0);
         
