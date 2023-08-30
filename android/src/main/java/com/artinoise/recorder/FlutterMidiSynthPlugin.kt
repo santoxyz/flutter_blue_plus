@@ -61,6 +61,8 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   private var targetBendForChannel = mutableListOf<Int>(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
   private var backgroundBendTaskIsRunning = false
 
+  private var wand_velocity = 70
+
   //NO MORE used as a plugin
   /*
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -111,9 +113,10 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
   */
 
   private fun backgroundBendTask(){
+    var wait = true
     while (backgroundBendTaskIsRunning){
       for (ch in 0 until bendForChannel.size-1) {
-        if (/*targetBendForChannel[ch] != 0 &&*/ bendForChannel[ch] != targetBendForChannel[ch]){
+        if (bendForChannel[ch] != targetBendForChannel[ch]){
           if(specialModes[ch]?.get("time") == 0 || bendForChannel[ch] == 0){
             bendForChannel[ch] = targetBendForChannel[ch]
           }
@@ -127,12 +130,18 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
 
           if(bendForChannel[ch] < targetBendForChannel[ch]){
             bendForChannel[ch] = bendForChannel[ch] + 1
+            wait = false
           } else if (bendForChannel[ch] > targetBendForChannel[ch]){
             bendForChannel[ch] = bendForChannel[ch] - 1
+            wait = false
           }
-          java.util.concurrent.TimeUnit.NANOSECONDS.sleep(100)
+          val t = specialModes[ch]?.get("time")
+          java.util.concurrent.TimeUnit.NANOSECONDS.sleep((t as Int).toLong() * 100)
           //print("BackgroundBendTask: ch $ch bend ${bendForChannel[ch]} target ${targetBendForChannel[ch]}\n")
         }
+      }
+      if(wait){
+        java.util.concurrent.TimeUnit.MILLISECONDS.sleep(1)
       }
     }
     println("backgroundBendTask stopped.")
@@ -342,7 +351,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
 
     val specialModeInfos = specialModes[ch]
     if(specialModeInfos?.get("mode") == 1 && specialModeInfos?.get("continuous") == true){
-      sendNoteOn(ch, lastNoteForChannel[ch], 80 /*velocity*/)
+      sendNoteOn(ch, lastNoteForChannel[ch], wand_velocity /*velocity*/)
     }
   }
 
@@ -384,7 +393,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     sendNoteOff(ch, n, v)
   }
 
-  public fun sendNoteOn(ch: Int, n: Int, v: Int) {
+  public fun wand_sendNoteOn(ch: Int, n: Int, v: Int) {
     //println (" -> noteON ch $ch n $n v $v")
     val msg = ByteArray(3)
     msg[0] = (0x90 or ch).toByte()
@@ -393,9 +402,38 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     if ( midiBridge.engine != null) midiBridge.write(msg)
   }
 
-  public fun sendNoteOff(ch: Int, n: Int, v: Int) {
+  public fun wand_sendNoteOff(ch: Int, n: Int, v: Int) {
     val msg = ByteArray(3)
     msg[0] = (0x80 or ch).toByte()
+    msg[1] = n.toByte()
+    msg[2] = v.toByte()
+    if (midiBridge.engine != null) midiBridge.write(msg)
+  }
+
+  public fun sendNoteOn(ch: Int, n: Int, v: Int) {
+    //println (" -> noteON ch $ch n $n v $v")
+    val msg = ByteArray(3)
+    var _ch = ch
+    var _v = v
+
+    if(specialModes[_ch]?.get("mode") == 1){
+      _ch += 1
+      _v = wand_velocity - 10
+    }
+
+    msg[0] = (0x90 or _ch).toByte()
+    msg[1] = n.toByte()
+    msg[2] = _v.toByte()
+    if ( midiBridge.engine != null) midiBridge.write(msg)
+  }
+
+  public fun sendNoteOff(ch: Int, n: Int, v: Int) {
+    val msg = ByteArray(3)
+    var _ch = ch
+    if(specialModes[_ch]?.get("mode") == 1){
+      _ch += 1
+    }
+    msg[0] = (0x80 or _ch).toByte()
     msg[1] = n.toByte()
     msg[2] = v.toByte()
     if (midiBridge.engine != null) midiBridge.write(msg)
@@ -429,9 +467,9 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
 
   private fun scaleRotation(fromMin: Int, fromMax: Int, toMin: Int, toMax: Int, value: Int) : Int {
     val x = if (value > fromMin) {value - fromMin} else 0
-    val scaled: Double = toMin.toDouble() + x.toDouble()*toMax.toDouble()/(fromMax-fromMin).toDouble()
+    val scaled: Double = toMin.toDouble() + x.toDouble()*(toMax.toDouble()-toMin.toDouble())/(fromMax-fromMin).toDouble()
     //println("scaleRotation fromMin=$fromMin fromMax=$fromMax toMin=$toMin toMax=$toMax v=$value x=$x scaled=$scaled" )
-    return scaled.toInt()
+    return if (scaled.toInt() > toMax) toMax else scaled.toInt()
   }
 
   private fun scaleInclination(fromMin: Int, fromMax: Int, toMin: Int, toMax: Int, value:Int) : Int {
@@ -501,7 +539,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
           52 -> { //rotation
             _m = m
             _n = 11;
-            _v = scaleRotation(30, 80, 0, 127, v)
+            _v = scaleRotation(0, (127*0.6).toInt(), 0, 127, v)
             //println("FlutterMidiSynthPlugin.kt sendMidi: scaledRotation: " + _v)
 
           }
@@ -558,10 +596,10 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
               if (!(infos["continuous"] as Boolean) && lastNoteForChannel[ch] !=0) { //quantized
                 //nothing to do
               } else {
-                sendNoteOff(ch, lastNoteForChannel[ch], 0)
                 lastNoteForChannel[ch] = (max + min) / 2
                 println("FlutterMidiSynthPlugin lastNoteForChannel[ch] != note sending new noteON for ${lastNoteForChannel[ch]}");
-                sendNoteOn(ch, lastNoteForChannel[ch], velocity)
+                wand_sendNoteOff(ch, 0, 0)
+                wand_sendNoteOn(ch, lastNoteForChannel[ch], wand_velocity)
               }
             }
 
@@ -674,7 +712,9 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
       //sendMidi((0xB0 or channel),  5, time) //Portamento time (CC5)
       //sendMidi((0xB0 or channel),  84, controller) //Portamento Controller (CC84) TEST = 64
 
-      sendNoteOn(channel, lastNoteForChannel[channel], 100)
+      wand_sendNoteOn(channel, lastNoteForChannel[channel], wand_velocity)
+      wand_sendNoteOff(channel, 0, 0)
+
     } else {
       // Enable/Disable portamento - mode 1 is WAND Mode
       //sendMidi((0xB0 or channel), 65, if (mode == 1) 127 else 0) //Portamento ON/OFF
