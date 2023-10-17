@@ -92,6 +92,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 
     //FlutterMidiSynthPlugin
     instance.midiSynth = [[SwiftFlutterMidiSynthPlugin alloc] init];
+    [instance.midiSynth setParentWithArg: instance];
     instance.transpose = 0;
 }
 

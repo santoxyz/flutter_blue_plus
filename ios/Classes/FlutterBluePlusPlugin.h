@@ -13,6 +13,7 @@
 
 @class SwiftFlutterMidiSynthPlugin;
 @interface FlutterBluePlusPlugin : NSObject<FlutterPlugin, CBCentralManagerDelegate, CBPeripheralDelegate>
+-(void)sendMessage:(NSString*)name withBody:(NSData*)bytes;
 @end
 
 @interface FlutterBluePlusStreamHandler : NSObject<FlutterStreamHandler>
