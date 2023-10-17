@@ -6,6 +6,7 @@ import Foundation
 
 @objcMembers public class SwiftFlutterMidiSynthPlugin: NSObject, FlutterPlugin {
 
+    var parent: FlutterBluePlusPlugin?
     var synth: SoftSynth?
     var sequencers: [Int:Sequencer] = [:]
     var recorders = [String : Int]() //[mac : channel]
@@ -469,6 +470,8 @@ import Foundation
                     //print("SwiftFlutterMidiSynthPlugin.swift pb_d1 \(pb_d1) pb_d2 \(pb_d2)")
 
                     if(lastNoteForChannel[ch] != note){
+
+                        parent?.sendMessage("WandNote", withBody: Data(bytes:&note, count:1) ) //Send current note to UI
                         if (!(infos?.3)! && lastNoteForChannel[ch] != 0) {
                             //nothing to do
                         } else {
@@ -499,6 +502,10 @@ import Foundation
             }
             synth!.midiEvent(cmd: command, d1: _d1, d2: _d2);
         }
+    }
+    
+    public func setParent(arg: FlutterBluePlusPlugin){
+        parent = arg
     }
     
     public func setReverb(dryWet: Float){
@@ -553,7 +560,6 @@ import Foundation
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 5, d2: time) //Portamento time (CC5)
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 84, d2: controller /*note*/ /*infos?.5*/ /*?? 0*/) //Portamento Controller (CC84) TEST = 64
 
-            
             if (continuous) {
                 //Causes audio glitch !
                 wand_noteOn(channel:Int(channel), note: Int(lastNoteForChannel[Int(channel)]), velocity: wand_velocity)
