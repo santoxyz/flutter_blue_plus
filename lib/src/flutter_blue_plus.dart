@@ -17,6 +17,7 @@ class FlutterBluePlus {
   /// a broadcast stream version of the MethodChannel
   // ignore: close_sinks
   static final StreamController<MethodCall> _methodStream = StreamController.broadcast();
+  StreamController<MethodCall> get methodStream => _methodStream; //SNTX expose methodStream
 
   // always keep track of these device variables
   static final Map<DeviceIdentifier, BmConnectionStateResponse> _connectionStates = {};

@@ -776,7 +776,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
         if(!call.method.equals("MIDIGetCurrentTick"))
           log(LogLevel.INFO, "[handleCall] " + call.method + " bridging call to FlutterMidiSynthPlugin");
         if (midiSynthPlugin == null){
-          midiSynthPlugin = new FlutterMidiSynthPlugin(context);
+          midiSynthPlugin = new FlutterMidiSynthPlugin(context, this);
         }
         midiSynthPlugin.manageMethodCall(call,result);
         break;
@@ -847,6 +847,11 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
       throw new Exception("descriptor (" + descriptorId + ") could not be located in the characteristic ("+characteristic.getUuid().toString()+")");
     }
     return descriptor;
+  }
+
+  public void sendMessage(final String name, final byte[] byteArray)
+  {
+    invokeMethodUIThread(name, byteArray);
   }
 
   private final StreamHandler stateHandler = new StreamHandler() {

@@ -84,9 +84,9 @@ class FlutterMidiSynthPlugin {
     return res;
   }
 
-  static void setSpecialMode(int channel, int mode, List notes, bool continuous, int time, int controller) async {
+  static void setSpecialMode(int channel, int mode, List notes, bool continuous, int time, int controller, bool muted) async {
     await _channel.invokeMethod("setSpecialMode",
-      {"channel": channel, "mode":mode, "notes":notes, "continuous":continuous, "time":time, "controller": controller});
+      {"channel": channel, "mode":mode, "notes":notes, "continuous":continuous, "time":time, "controller": controller, "muted": muted});
     return;
   }
 
