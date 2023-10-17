@@ -14,9 +14,10 @@ import java.lang.Thread
 import java.util.ArrayList
 import kotlinx.coroutines.*
 import java.util.concurrent.TimeUnit
+import com.boskokg.flutter_blue_plus.FlutterBluePlusPlugin
 
 /** FlutterMidiSynthPlugin */
-public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, MethodCallHandler,*/ /* MidiDriver.OnMidiStartListener,*/
+public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBluePlusPlugin): /*FlutterPlugin, MethodCallHandler,*/ /* MidiDriver.OnMidiStartListener,*/
   ActivityAware {
 
   /// The MethodChannel that will the communication between Flutter and native Android
@@ -250,8 +251,8 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
         val continuous = args["continuous"] as Boolean
         val time = args["time"] as Int
         val controller = args["controller"] as Int
-
-        setSpecialMode(args, channel, mode, notes, continuous, time/10, controller)
+        val muted = args["muted"] as Boolean
+        setSpecialMode(args, channel, mode, notes, continuous, time/10, controller, muted)
 
         result.success(null)
       }
@@ -590,6 +591,8 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
               _v = (bend shr 7) and 0x7f
             }
 
+            parent.sendMessage("WandNote", byteArrayOf(note.toByte())) //Send current note to UI
+
             //println("FlutterMidiSynthPlugin v $v  => bend $bend (" + (bend*100/0x4000) + "%) d1 " + _n  + " d2 " + _v)
 
             if(lastNoteForChannel[ch] != note){
@@ -682,7 +685,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
     return span
   }
 
-  fun setSpecialMode(args: HashMap<String, *>, channel: Int, mode: Int, notes: MutableList<Int>, continuous: kotlin.Boolean, time: Int, controller: Int) {
+  fun setSpecialMode(args: HashMap<String, *>, channel: Int, mode: Int, notes: MutableList<Int>, continuous: kotlin.Boolean, time: Int, controller: Int, muted: Boolean) {
 
     val prev_mode = specialModes[channel]?.get("mode")
     if(prev_mode != mode || !continuous){
@@ -694,7 +697,7 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
 
     specialModes[channel] = args
 
-    println("setSpecialMode ch="+channel+" mode="+mode+" notes?"+notes+" continuous="+continuous+" time="+time+" controller="+controller);
+    println("setSpecialMode ch="+channel+" mode="+mode+" notes?"+notes+" continuous="+continuous+" time="+time+" controller="+controller+" muted="+muted);
 
     if (/*continuous &&*/ mode == 1){  //mode 1 is WAND Mode
       if(backgroundBendTaskIsRunning == false){
@@ -714,6 +717,8 @@ public class FlutterMidiSynthPlugin(val context: Context): /*FlutterPlugin, Meth
 
       wand_sendNoteOn(channel, lastNoteForChannel[channel], wand_velocity)
       wand_sendNoteOff(channel, 0, 0)
+
+      sendMidi((0xB0 or channel), 7, if(muted) 0 else 127)
 
     } else {
       // Enable/Disable portamento - mode 1 is WAND Mode

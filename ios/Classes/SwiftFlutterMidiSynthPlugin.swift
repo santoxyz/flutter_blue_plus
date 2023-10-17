@@ -24,7 +24,7 @@ import Foundation
     let movingWindowDepth = 1
     var bendForChannel: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     var targetBendForChannel: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
-    typealias specialModeInfos = (channel : UInt32, mode: UInt32, notes:[Int], continuous: Bool , time: UInt32, controller: UInt32)
+    typealias specialModeInfos = (channel : UInt32, mode: UInt32, notes:[Int], continuous: Bool , time: UInt32, controller: UInt32, muted: Bool)
     var specialModes = [Int:specialModeInfos]() //[channel, specialModeInfos]
     var backgroundBendTaskIsRunning: Bool = false
 
@@ -94,8 +94,8 @@ import Foundation
             let continuous = args?["continuous"] as! Bool
             let time = args?["time"] as! UInt32
             let controller = args?["controller"] as! UInt32
-
-            self.setSpecialMode(channel:channel, mode:mode, notes:notes, continuous:continuous, time:time, controller:controller)
+            let muted = args?["muted"] as! Bool
+            self.setSpecialMode(channel:channel, mode:mode, notes:notes, continuous:continuous, time:time, controller:controller, muted:muted)
             
         default:
             print ("unknown method \(call.method)" )
@@ -253,7 +253,9 @@ import Foundation
             recorders[mac!] = channel
             expressions[mac!] = expression
         }
-        
+
+        let specialModeInfos = specialModes[Int(channel)]
+
         let infos : instrumentInfos = ( channel: channel, instrument: instrument, bank: bank, mac: mac)
         instruments[channel] = infos
         synth!.loadPatch(patchNo: instrument, channel: channel, bank: bank)
@@ -265,11 +267,9 @@ import Foundation
             midiEvent(command: 0xB0 + UInt32(channel), d1: 11, d2: 10);
         }
         
-        let specialModeInfos = specialModes[Int(channel)]
         if (specialModeInfos?.mode == 1 /*WAND*/ && specialModeInfos?.continuous == true /*continuous*/){
             wand_noteOn(channel: channel, note: Int(lastNoteForChannel[channel]), velocity: wand_velocity)
         }
-
     }
     
     public func noteOnWithMac(channel: Int, note: Int, velocity: Int, mac: String ){
@@ -411,7 +411,7 @@ import Foundation
         var _d2 = d2
         var _command = command
         var ch = Int(command & 0xf)
-        let infos = specialModes[ch] //(channel : Int, mode: Int, notes:[Int], continuous: Bool , time: Int, controller: Int)
+        let infos = specialModes[ch] //(channel : Int, mode: Int, notes:[Int], continuous: Bool , time: Int, controller: Int, muted: Bool)
 
         if (infos?.mode == 1){ //WAND MODE
             //print("SwiftFlutterMidiSyntPlugin.swift midiEvent cmd \(command)  ch \(ch) d1 \(d1) d2 \(d2) infos \(infos) (RAW) ")
@@ -425,7 +425,6 @@ import Foundation
                     //print("SwiftFlutterMidiSynthPlugin.swift Rotation: uscaled \(uscaled) d2 \(_d2) _d1 \(_d1)")
                     synth!.midiEvent(cmd: _command, d1: _d1, d2: uscaled)
 
-                    
                 case 1: /*inclination*/
                     let notes = infos?.notes ?? []
                     var note = 0
@@ -510,8 +509,8 @@ import Foundation
         synth!.setDelay(dryWet: dryWet)
     }
 
-    public func setSpecialMode(channel: UInt32, mode: UInt32, notes: [Int], continuous: Bool, time: UInt32, controller: UInt32){
-        let infos : specialModeInfos = (channel: channel, mode: mode, notes: notes, continuous: continuous, time: time, controller: controller)
+    public func setSpecialMode(channel: UInt32, mode: UInt32, notes: [Int], continuous: Bool, time: UInt32, controller: UInt32, muted: Bool){
+        let infos : specialModeInfos = (channel: channel, mode: mode, notes: notes, continuous: continuous, time: time, controller: controller, muted: muted)
         let prev_mode = specialModes[Int(channel)]?.1
         if(prev_mode != mode || !continuous){
             lastNoteForChannel[Int(channel)] = 0;
@@ -523,15 +522,21 @@ import Foundation
 
         if(/*continuous &&*/ mode == 1){
             if(backgroundBendTaskIsRunning == false){
-                DispatchQueue.global(qos: .background).async {
-                    self.backgroundBendTaskIsRunning = true
-                    self.backgroundBendTask();
+                do {
+                    try DispatchQueue.global(qos: .background).async {
+                        self.backgroundBendTaskIsRunning = true
+                        self.backgroundBendTask();
+                    }
+                } catch {
+                    print ("Error in DispatchQueue trying to start backgroundBendTask()");
                 }
             }
             
             let span = notes.max()! - notes.min()! //semitones span, notes includes upper octave rootnote
             let pps = 16384/span
-            print("setSpecialMode mode \(mode) on channel \(channel) - notes \(notes) span \(span) (\(pps) points/semitone) continuous \(continuous) time \(time) controller \(controller)")
+            print("setSpecialMode mode \(mode) on channel \(channel) - notes \(notes) span \(span) (\(pps) points/semitone) continuous \(continuous) time \(time) controller \(controller) muted \(muted)")
+
+            synth!.midiEvent(cmd: 0xB0 | channel, d1: 7, d2: 0) //tolgo volume
 
             //Setup Pitch Bend Range
             //CC101 set value 0
@@ -548,8 +553,13 @@ import Foundation
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 5, d2: time) //Portamento time (CC5)
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 84, d2: controller /*note*/ /*infos?.5*/ /*?? 0*/) //Portamento Controller (CC84) TEST = 64
 
-            wand_noteOn(channel:Int(channel), note: Int(lastNoteForChannel[Int(channel)]), velocity: wand_velocity)
-            wand_noteOff(channel:Int(channel), note:0, velocity:0)
+            
+            if (continuous) {
+                //Causes audio glitch !
+                wand_noteOn(channel:Int(channel), note: Int(lastNoteForChannel[Int(channel)]), velocity: wand_velocity)
+                wand_noteOff(channel:Int(channel), note:0, velocity:0)
+            }
+            synth!.midiEvent(cmd: 0xB0 | channel, d1: 7, d2: muted ? 0 : 127)
 
         } else {
             // Enable/Disable portamento - mode 1 is WAND Mode
