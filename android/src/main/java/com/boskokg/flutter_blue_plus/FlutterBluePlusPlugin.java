@@ -1340,13 +1340,15 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
                 (status >= (byte)0xd0 /*ChPressure*/ && status < (byte)0xe0 /*bender*/)
         ){
           switch (status){
-            case (byte) 0x90:
+            case (byte) 0x90: //noteon
               midiSynthPlugin.sendNoteOnWithMAC(d1+transpose,d2,gatt.getDevice().getAddress());
               break;
-            case (byte) 0x80:
-              CircularFifoArray xpressions = xpressionsMap.get((int) ch);
-              if(xpressions != null) {
-                xpressions.clear();
+            case (byte) 0x80: //noteoff
+              if (!midiSynthPlugin.hasSpecialModeWAND(ch)) {
+                CircularFifoArray xpressions = xpressionsMap.get((int) ch);
+                if (xpressions != null) {
+                  xpressions.clear();
+                }
               }
               midiSynthPlugin.sendNoteOffWithMAC(d1+transpose,d2,gatt.getDevice().getAddress());
               break;
@@ -1359,7 +1361,10 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
 
             case (byte) 0xB0:
               if(d1==11) {
-                //break; //ignore Expression
+                if(midiSynthPlugin.hasSpecialModeWAND(ch)) {
+                  Log.i(TAG, "WAND MODE: ignoring expression on ch=" + ch);
+                  break; //ignore Expression
+                }
                 //d2 = xpressionAvg(ch,d2);
                 d2 = xpressionScale(25,110,d2);
               }

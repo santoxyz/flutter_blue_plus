@@ -72,7 +72,7 @@ extern "C" JNIEXPORT bool JNICALL Java_com_artinoise_recorder_FluidSynthDriver_i
 //        res = fluid_settings_setint(settings, "audio.realtime-prio", 99);
 //        __android_log_print(ANDROID_LOG_INFO, TAG, "set  realtime-prio res=%d",res);
 
-        res = fluid_settings_setint(settings, "synth.polyphony", 8);
+        res = fluid_settings_setint(settings, "synth.polyphony", 32);
         __android_log_print(ANDROID_LOG_INFO, TAG, "set synth.polyphony res=%d",res);
 
         res = fluid_settings_setnum(settings, "synth.sample-rate", (double)sampleRate);
