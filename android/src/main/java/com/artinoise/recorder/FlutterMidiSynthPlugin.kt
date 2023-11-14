@@ -391,6 +391,8 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
         }
       }
     } catch (e: KotlinNullPointerException){}
+
+    println ("AAAA sendNoteOffWithMAC ${ch} $n $v $mac recorders= $recorders")
     sendNoteOff(ch, n, v)
   }
 
