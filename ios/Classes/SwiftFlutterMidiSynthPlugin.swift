@@ -518,7 +518,9 @@ import Foundation
 
     public func setSpecialMode(channel: UInt32, mode: UInt32, notes: [Int], continuous: Bool, time: UInt32, controller: UInt32, muted: Bool){
         let infos : specialModeInfos = (channel: channel, mode: mode, notes: notes, continuous: continuous, time: time, controller: controller, muted: muted)
-        let prev_mode = specialModes[Int(channel)]?.1
+        let prev_mode = specialModes[Int(channel)]?.1 //mode
+        let prev_continuous = specialModes[Int(channel)]?.3 //continuous
+
         if(prev_mode != mode || !continuous){
             lastNoteForChannel[Int(channel)] = 0;
         }
@@ -560,11 +562,11 @@ import Foundation
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 5, d2: time) //Portamento time (CC5)
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 84, d2: controller /*note*/ /*infos?.5*/ /*?? 0*/) //Portamento Controller (CC84) TEST = 64
 
-            if (continuous) {
+            if((prev_continuous != continuous && continuous) || !continuous){
                 //Causes audio glitch !
                 wand_noteOn(channel:Int(channel), note: Int(lastNoteForChannel[Int(channel)]), velocity: wand_velocity)
-                wand_noteOff(channel:Int(channel), note:0, velocity:0)
             }
+            wand_noteOff(channel:Int(channel), note:0, velocity:0)
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 7, d2: muted ? 0 : 127)
 
         } else {
