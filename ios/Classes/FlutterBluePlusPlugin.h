@@ -1,4 +1,4 @@
-// Copyright 2017, Paul DeMarco.
+// Copyright 2017-2023, Charles Weinberger & Paul DeMarco.
 // All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
@@ -16,4 +16,5 @@
 
 @interface FlutterBluePlusStreamHandler : NSObject<FlutterStreamHandler>
 @property FlutterEventSink sink;
+@property NSDictionary *cachedBluetoothAdapterState;
 @end
