@@ -70,6 +70,11 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 
 @implementation FlutterBluePlusPlugin
 
+-(void)sendMessage:(NSString*)name withBody:(NSData*)bytes
+{
+    [self.methodChannel invokeMethod:name arguments:bytes];
+}
+
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar
 {
     FlutterMethodChannel *methodChannel = [FlutterMethodChannel methodChannelWithName:NAMESPACE @"/methods"
