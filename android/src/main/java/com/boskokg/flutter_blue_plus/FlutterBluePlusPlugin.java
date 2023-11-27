@@ -184,7 +184,7 @@ public class FlutterBluePlusPlugin implements FlutterPlugin, MethodCallHandler, 
 
   @Override
   public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
-    log(LogLevel.INFO, "FlutterBluePlusPlugin onMethodCall call.method=" + call.method + " call.arguments=" + call.arguments);
+    //log(LogLevel.INFO, "FlutterBluePlusPlugin onMethodCall call.method=" + call.method + " call.arguments=" + call.arguments);
     if(mBluetoothAdapter == null && !"isAvailable".equals(call.method)) {
       result.error("bluetooth_unavailable", "the device does not have bluetooth", null);
       return;

@@ -352,7 +352,8 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
 
     val specialModeInfos = specialModes[ch]
     if(specialModeInfos?.get("mode") == 1 && specialModeInfos?.get("continuous") == true){
-      sendNoteOn(ch, lastNoteForChannel[ch], wand_velocity /*velocity*/)
+      //println("SNTX -> selectInstrument mode == 1 && continuous == true ch=$ch lastNoteForChannel=$(lastNoteForChannel[ch])\n")
+      wand_sendNoteOn(ch, lastNoteForChannel[ch], wand_velocity /*velocity*/)
     }
   }
 
@@ -690,6 +691,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
   fun setSpecialMode(args: HashMap<String, *>, channel: Int, mode: Int, notes: MutableList<Int>, continuous: kotlin.Boolean, time: Int, controller: Int, muted: Boolean) {
 
     val prev_mode = specialModes[channel]?.get("mode")
+    val prev_continuous = specialModes[channel]?.get("continuous")
     if(prev_mode != mode || !continuous){
       println("prev_mode=$prev_mode mode=$mode continuous=$continuous")
       lastNoteForChannel[channel] = 0
@@ -699,7 +701,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
 
     specialModes[channel] = args
 
-    println("setSpecialMode ch="+channel+" mode="+mode+" notes?"+notes+" continuous="+continuous+" time="+time+" controller="+controller+" muted="+muted);
+    //println("setSpecialMode ch="+channel+" mode="+mode+" notes?"+notes+" continuous="+continuous+" time="+time+" controller="+controller+" muted="+muted);
 
     if (/*continuous &&*/ mode == 1){  //mode 1 is WAND Mode
       if(backgroundBendTaskIsRunning == false){
@@ -710,14 +712,18 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
       }
 
       val span = setSpan(channel, notes, true);
-      println("setSpecialMode continuous Mode: span=$span")
+      //println("setSpecialMode: span=$span")
 
       // Enable/Disable portamento - mode 1 is WAND Mode
       //sendMidi((0xB0 or channel),  65, if (mode == 1) 127 else 0)
       //sendMidi((0xB0 or channel),  5, time) //Portamento time (CC5)
       //sendMidi((0xB0 or channel),  84, controller) //Portamento Controller (CC84) TEST = 64
 
-      wand_sendNoteOn(channel, lastNoteForChannel[channel], wand_velocity)
+      //println("prev_mode=" + prev_mode + " mode=" + mode + " continuous=" + continuous)
+      if((prev_continuous != continuous && continuous) || !continuous){
+        println("setSpecialMode: NOT CONTINUOUS or mode changed - channel=" + channel + " lastNote=" + lastNoteForChannel[channel])
+        wand_sendNoteOn(channel, lastNoteForChannel[channel], wand_velocity)
+      }
       wand_sendNoteOff(channel, 0, 0)
 
       sendMidi((0xB0 or channel), 7, if(muted) 0 else 127)
