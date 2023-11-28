@@ -1,7 +1,23 @@
 group 'com.lib.flutter_blue_plus'
 version '1.0'
 
+buildscript {
+    ext {
+        kotlin_version = '1.8.22'
+    }
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:7.4.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
 apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
 
 android {
     compileSdkVersion 33
@@ -34,4 +50,11 @@ android {
     }
 
     namespace 'com.lib.flutter_blue_plus'
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    api 'androidx.core:core:1.0.1'
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation 'com.google.oboe:oboe:1.6.1'
 }

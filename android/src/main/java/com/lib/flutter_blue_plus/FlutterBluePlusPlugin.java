@@ -61,6 +61,9 @@ import androidx.annotation.RequiresApi;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.artinoise.recorder.FlutterMidiSynthPlugin;
+import com.artinoise.recorder.CircularFifoArray;
+
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
@@ -118,6 +121,10 @@ public class FlutterBluePlusPlugin implements
     private interface OperationOnPermission {
         void op(boolean granted, String permission);
     }
+
+    private int transpose = 0;
+    private FlutterMidiSynthPlugin midiSynthPlugin = null;
+    java.util.HashMap<Integer, CircularFifoArray> xpressionsMap=new HashMap<Integer,CircularFifoArray>(); //ch,List<values>
 
     public FlutterBluePlusPlugin() {}
 
@@ -1414,6 +1421,45 @@ public class FlutterBluePlusPlugin implements
                     break;
                 }
 
+                //Transpose:
+                case "transpose":
+                    transpose = call.arguments();
+                    break;
+
+                ///FlutterMidiSynthPlugin
+                case "initSynth":
+                case "setInstrument":
+                case "noteOn":
+                case "noteOff":
+                case "midiEvent":
+                case "setReverb":
+                case "setDelay":
+                case "initAudioSession":
+                case "setAllowedInstrumentsIndexes":
+                case "MIDIPrepare":
+                case "MIDIPlay":
+                case "MIDIPause":
+                case "MIDIResume":
+                case "MIDIStop":
+                case "MIDIGetTotalTicks":
+                case "MIDIGetCurrentTick":
+                case "MIDIGetBpm":
+                case "MIDIGetTempo":
+                case "MIDIGetStatus":
+
+                case "MIDISetVolume":
+                case "MIDISetTempo":
+                case "MIDISetMetronomeVolume":
+                case "setSpecialMode":
+                    if(!call.method.equals("MIDIGetCurrentTick"))
+                        log(LogLevel.INFO, "[handleCall] " + call.method + " bridging call to FlutterMidiSynthPlugin");
+                    if (midiSynthPlugin == null){
+                        midiSynthPlugin = new FlutterMidiSynthPlugin(context, this);
+                    }
+                    midiSynthPlugin.manageMethodCall(call,result);
+                    break;
+                ///FINE FlutterMidiSynthPlugin
+
                 default:
                 {
                     result.notImplemented();
@@ -1428,6 +1474,13 @@ public class FlutterBluePlusPlugin implements
             result.error("androidException", e.toString(), stackTrace);
             return;
         }
+    }
+
+    public void sendMessage(final String name, final byte[] byteArray)
+    {
+        HashMap<String, Object> map = new HashMap<>();
+        map.put(name, byteArray);
+        invokeMethodUIThread(name, map);
     }
 
    //////////////////////////////////////////////////////////////////////
@@ -2059,6 +2112,7 @@ public class FlutterBluePlusPlugin implements
         {
             // this callback is only for notifications & indications
             log(LogLevel.DEBUG, "onCharacteristicChanged: " + uuidStr(characteristic.getUuid()));
+            directMidiMessageManager(gatt, characteristic, value);
             onCharacteristicReceived(gatt, characteristic, value, BluetoothGatt.GATT_SUCCESS);
         }
 
@@ -2720,4 +2774,200 @@ public class FlutterBluePlusPlugin implements
         DEBUG,   // 4
         VERBOSE  // 5
     }
+
+
+
+    private boolean isSysex(byte[] data){
+        if(data.length -2 < 6){
+            return false;
+        }
+
+        final byte[] header = {(byte)0xf0,(byte)0x0,(byte)0x2f,(byte)0x7f,(byte)0x0,(byte)0x1};
+        byte[] hdr = {data[2],data[3],data[4],data[5],data[6],data[7]};
+
+        if (data[data.length-1] == (byte)0x7f && Arrays.equals(hdr,header)){
+            return true;
+        }
+        return false;
+    }
+
+    private ArrayList<byte[]> parseMidiMessages(byte[] data){
+
+        ArrayList<byte[]> ret = new ArrayList<byte[]>();
+
+        if (data.length > 11) {
+            if(isSysex(data))
+                return ret;
+        }
+
+        //Se non è un sysex, procedo nel processare il pacchetto.
+        final int STATE_HDR = 0;
+        final int STATE_TS = 1;
+        final int STATE_ST = 2;
+        final int STATE_D1 = 3;
+        final int STATE_D2 = 4;
+
+        int state = STATE_HDR;
+
+        byte status = 0;
+        byte channel = 0;
+        byte d1 = -1;
+        byte d2 = -1;
+
+        for (int i = 0; i < data.length; i++) {
+            byte b = data[i];
+            //Log.i(TAG, "[parseMidiMessages] state: " + state + " status=" + bytesToHex(new byte[]{status}) + " channel=" + channel +
+            //        " d1=" + bytesToHex(new byte[]{d1}) + " d2=" + bytesToHex(new byte[]{d2}));
+            switch (state) {
+                case STATE_HDR:
+                    state = STATE_TS;
+                    continue;
+                case STATE_TS:
+                    state = STATE_ST;
+                    continue;
+                case STATE_ST:
+                    status = (byte)(b & 0xf0);
+                    channel = (byte)(b & 0x0f);
+                    state = STATE_D1;
+                    continue;
+                case STATE_D1:
+                    d1 = b;
+                    if (status < (byte)(0xc0) || status > (byte)(0xe0)) {
+                        //Log.i(TAG, "status=" + bytesToHex(new byte[]{status}) + " going to STATE_D2");
+                        state = STATE_D2;
+                    } else {
+                        //PRGM_CHANGE e AFTER_TOUCH hanno un solo byte di informazione
+                        //Log.i(TAG, "adding MIDI msg containing only d1 byte");
+                        ret.add(new byte[]{status,channel,d1,d2});
+                        status = channel = 0;
+                        d1 = d2 = -1;
+                        state = STATE_TS;
+                    }
+                    continue;
+                case STATE_D2:
+                    d2 = b;
+                    //Log.i(TAG, "adding MIDI msg containing d1 and d2 byte");
+                    ret.add(new byte[]{status,channel,d1,d2});
+                    status = channel = 0;
+                    d1 = d2 = -1;
+                    state = STATE_TS;
+                    continue;
+
+                default:
+                    Log.w(TAG, "you should never reach this state!");
+                    break;
+            }
+        }
+
+        return ret;
+    }
+
+    private void directMidiMessageManager(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, byte[] data) {
+        //byte[] data = characteristic.getValue();
+        ArrayList<byte[]> messages = parseMidiMessages(data);
+        //Log.i(TAG, "[directMidiMessageManager] uuid: " + characteristic.getUuid().toString()
+        //        + " data=" + bytesToHex(data) + " messages=" + messages);
+        if (messages != null && messages.size()>0){
+            for (byte[] m : messages) {
+                //Log.i(TAG, " processing message " + bytesToHex(m));
+
+                byte status = m[0];
+                byte ch = m[1];
+                byte d1 = m[2];
+                byte d2 = m[3];
+
+
+                boolean filter_accel = true;
+                if(!midiSynthPlugin.hasSpecialModeWAND(ch)){ /*in WAND mode let the rotation CC pass*/
+                    filter_accel &= (d1 != 52);
+                }
+                filter_accel &= (d1 != 53); /*filtering accelerometer y an z*/
+
+
+                if (status == (byte)0x90 /*noteON*/ ||
+                        status == (byte)0x80 /*noteOFF*/ ||
+                        (status >= (byte)0xb0 /*CC*/ && status < (byte)0xc0 /*PrgChg*/ && filter_accel /*filtering accelerometer y and z*/) ||
+                        (status >= (byte)0xc0 /*PrgChg*/ && status < (byte)0xd0 /*ChPressure*/) ||
+                        (status >= (byte)0xd0 /*ChPressure*/ && status < (byte)0xe0 /*bender*/)
+                ){
+                    switch (status){
+                        case (byte) 0x90: //noteon
+                            midiSynthPlugin.sendNoteOnWithMAC(d1+transpose,d2,gatt.getDevice().getAddress());
+                            break;
+                        case (byte) 0x80: //noteoff
+                            if (!midiSynthPlugin.hasSpecialModeWAND(ch)) {
+                                CircularFifoArray xpressions = xpressionsMap.get((int) ch);
+                                if (xpressions != null) {
+                                    xpressions.clear();
+                                }
+                            }
+                            midiSynthPlugin.sendNoteOffWithMAC(d1+transpose,d2,gatt.getDevice().getAddress());
+                            break;
+
+                        case (byte) 0xC0: //Program Change
+                            Log.i(TAG, "[directMidiMessageManager] uuid: " + characteristic.getUuid().toString()
+                                    + " PROGRAM CHANGE - ch="+ch+" status="+ status + " d1=" + d1 + " d2=" + d2 + "(ignored) mac=" + gatt.getDevice().getAddress());
+                            midiSynthPlugin.sendMidiWithMAC(ch|status,d1,0,gatt.getDevice().getAddress());
+                            break;
+
+                        case (byte) 0xB0:
+                            if(d1==11) {
+                                if(midiSynthPlugin.hasSpecialModeWAND(ch)) {
+                                    Log.i(TAG, "WAND MODE: ignoring expression on ch=" + ch);
+                                    break; //ignore Expression
+                                }
+                                //d2 = xpressionAvg(ch,d2);
+                                d2 = xpressionScale(25,110,d2);
+                            }
+                            /*
+                            case (byte) 0xB0:
+                                if(d1==01) {
+                                    break; //ignore Modulation Wheel
+                                }
+                                //ATTENZIONE NON C'E' IL BREAK!
+                            case (byte) 0xD0: //aftertouch
+                                status = (byte)0xB0;
+                                final int c = 60;
+                                double v = c + ((127.0f-c)*d1)/127.0f;
+                                d2=(byte)(int)v;
+                                d1=11;
+                                //break; ATTENZIONE NON C'E' IL BREAK!
+
+                             */
+
+                        default:
+                            midiSynthPlugin.sendMidiWithMAC(ch|status,d1,d2,gatt.getDevice().getAddress());
+                    }
+                } else {
+                    if(d1==52 && status==-80){
+                        //Log.i(TAG, "rotation d1="+d1);
+                    } else {
+                        Log.i(TAG, "[directMidiMessageManager] uuid: " + characteristic.getUuid().toString()
+                                + " FILTERED msg ch=" + ch + " status=" + status + " d1=" + d1 + " d2=" + d2 + " mac=" + gatt.getDevice().getAddress());
+                    }
+                }
+
+            }
+        }
+    }
+
+    private byte xpressionScale(int min, int max, byte v) {
+        double scaled = min + (max-min)*v/127.0f;
+        //Log.d("xpressionScale", " v=" + v + " scaled=" + scaled );
+        return (byte)(int)scaled;
+    }
+
+    private byte xpressionAvg(byte ch, byte v){
+        CircularFifoArray xpressions = xpressionsMap.get((int) ch);
+        Log.i("xpressionAvg", " ch=" + ch + " xpressions=" + xpressions );
+        if(xpressions == null){
+            xpressions = new CircularFifoArray(30);
+        }
+        xpressions.add((int) v);
+        xpressionsMap.put((int) ch,xpressions);
+
+        return (byte) (xpressions.avg() & 0xff);
+    }
+
+
 }
