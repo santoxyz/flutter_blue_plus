@@ -141,7 +141,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_artinoise_recorder_FluidSynthDriv
     snprintf(sfPath,sizeof(sfPath),"%s",soundfontPath);
     // Load sample soundfont
     int ret = fluid_synth_sfload(synth, sfPath, 1);
-    __android_log_print(ANDROID_LOG_INFO, TAG, "fluid_synth_sfload path=%s synth=%p adriver=%p ret=%d",soundfontPath, synth,adriver,ret);
+    __android_log_print(ANDROID_LOG_INFO, TAG, "fluid_synth_sfload path=%s synth=%p adriver=%p sfId=%d (-1=FLUID_FAILED)",soundfontPath, synth,adriver,ret);
     env->ReleaseStringUTFChars(jSoundfontPath, soundfontPath);
     return true;
 }

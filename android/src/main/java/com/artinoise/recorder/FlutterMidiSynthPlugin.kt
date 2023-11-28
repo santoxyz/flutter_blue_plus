@@ -14,7 +14,7 @@ import java.lang.Thread
 import java.util.ArrayList
 import kotlinx.coroutines.*
 import java.util.concurrent.TimeUnit
-import com.boskokg.flutter_blue_plus.FlutterBluePlusPlugin
+import com.lib.flutter_blue_plus.FlutterBluePlusPlugin
 
 /** FlutterMidiSynthPlugin */
 public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBluePlusPlugin): /*FlutterPlugin, MethodCallHandler,*/ /* MidiDriver.OnMidiStartListener,*/
@@ -373,7 +373,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
 
     }
 
-    println ("AAAA sendNoteOnWithMAC ${ch} $n $v $mac recorders= $recorders")
+    //println ("AAAA sendNoteOnWithMAC ${ch} $n $v $mac recorders= $recorders")
     sendNoteOn(ch, n, v)
   }
 
@@ -393,7 +393,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
       }
     } catch (e: KotlinNullPointerException){}
 
-    println ("AAAA sendNoteOffWithMAC ${ch} $n $v $mac recorders= $recorders")
+    //println ("AAAA sendNoteOffWithMAC ${ch} $n $v $mac recorders= $recorders")
     sendNoteOff(ch, n, v)
   }
 
