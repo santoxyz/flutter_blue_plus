@@ -423,7 +423,7 @@ import Foundation
     }
 
     public func midiEvent(synthIdx: Int, command: UInt32, d1: UInt32, d2: UInt32){
-        print("SwiftFlutterMidiSyntPlugin.swift midiEvent synthIdx=\(synthIdx) command=\(command)  d1=\(d1) d2=\(d2) (RAW) ")
+        //print("SwiftFlutterMidiSyntPlugin.swift midiEvent synthIdx=\(synthIdx) command=\(command)  d1=\(d1) d2=\(d2) (RAW) ")
 
         var _d1 = d1
         var _d2 = d2
