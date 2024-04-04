@@ -543,7 +543,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
           52 -> { //rotation
             _m = m
             _n = 11;
-            _v = scaleRotation(0, (127*0.6).toInt(), 0, 127, v)
+            _v = scaleRotation(0, (127*0.6).toInt(), 0, (127*0.3).toInt(), v)
             //println("FlutterMidiSynthPlugin.kt sendMidi: scaledRotation: " + _v)
 
           }

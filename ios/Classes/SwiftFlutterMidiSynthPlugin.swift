@@ -337,7 +337,7 @@ import Foundation
         sequencer.noteOn(note: UInt8(note))
 
         let now = (Int64)(NSDate().timeIntervalSince1970*1000)
-        print("\(now) SwiftFlutterMidiSyntPlugin.swift noteOn \(_channel)  \(note) \(_velocity) ")
+        //print("\(now) SwiftFlutterMidiSynthPlugin.swift noteOn \(_channel)  \(note) \(_velocity) ")
     }
     
     public func noteOff(channel: Int, note: Int, velocity: Int){
@@ -420,7 +420,7 @@ import Foundation
             if(_command & 0xf0 == 0xb0){
                 switch d1 {
                 case 52: /*rotation*/
-                    let uscaled = scaleRotation(fromMin: 0, fromMax: Int(127*0.6), toMin: 0, toMax: 127, value: _d2)
+                    let uscaled = scaleRotation(fromMin: 0, fromMax: Int(127*0.6), toMin: 0, toMax: Int(127*0.3), value: _d2)
                     _d1 = 11 //Map rotation to volume via expression
                     //_d1 = 7 //Map rotation to volume via volume
                     //print("SwiftFlutterMidiSynthPlugin.swift Rotation: uscaled \(uscaled) d2 \(_d2) _d1 \(_d1)")
