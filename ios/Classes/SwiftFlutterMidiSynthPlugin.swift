@@ -562,11 +562,12 @@ import Foundation
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 5, d2: time) //Portamento time (CC5)
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 84, d2: controller /*note*/ /*infos?.5*/ /*?? 0*/) //Portamento Controller (CC84) TEST = 64
 
-            if((prev_continuous != continuous && continuous) || !continuous){
+            if (continuous || prev_continuous != continuous){
                 //Causes audio glitch !
                 wand_noteOn(channel:Int(channel), note: Int(lastNoteForChannel[Int(channel)]), velocity: wand_velocity)
+            } else if (!continuous) {
+                wand_noteOff(channel:Int(channel), note:0, velocity:0)
             }
-            wand_noteOff(channel:Int(channel), note:0, velocity:0)
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 7, d2: muted ? 0 : 127)
 
         } else {
