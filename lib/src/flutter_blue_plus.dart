@@ -10,10 +10,11 @@ class FlutterBluePlus {
   //
 
   static bool _initialized = false;
+
   /// Singleton boilerplate
   FlutterBluePlus._() {
-    _channel.setMethodCallHandler((MethodCall call) async {
-      _methodStreamController.add(call);
+    _methods.setMethodCallHandler((MethodCall call) async {
+      _methodStream.add(call);
     });
     if (!Platform.isWindows) {
       setLogLevel(logLevel);
