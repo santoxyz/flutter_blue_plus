@@ -337,7 +337,7 @@ import Foundation
         sequencer.noteOn(note: UInt8(note))
 
         let now = (Int64)(NSDate().timeIntervalSince1970*1000)
-        print("\(now) SwiftFlutterMidiSyntPlugin.swift noteOn \(_channel)  \(note) \(_velocity) ")
+        //print("\(now) SwiftFlutterMidiSynthPlugin.swift noteOn \(_channel)  \(note) \(_velocity) ")
     }
     
     public func noteOff(channel: Int, note: Int, velocity: Int){
@@ -420,7 +420,7 @@ import Foundation
             if(_command & 0xf0 == 0xb0){
                 switch d1 {
                 case 52: /*rotation*/
-                    let uscaled = scaleRotation(fromMin: 0, fromMax: Int(127*0.6), toMin: 0, toMax: 127, value: _d2)
+                    let uscaled = scaleRotation(fromMin: 0, fromMax: Int(127*0.6), toMin: 0, toMax: Int(127*0.3), value: _d2)
                     _d1 = 11 //Map rotation to volume via expression
                     //_d1 = 7 //Map rotation to volume via volume
                     //print("SwiftFlutterMidiSynthPlugin.swift Rotation: uscaled \(uscaled) d2 \(_d2) _d1 \(_d1)")
@@ -562,11 +562,12 @@ import Foundation
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 5, d2: time) //Portamento time (CC5)
             //synth!.midiEvent(cmd: 0xB0 | channel, d1: 84, d2: controller /*note*/ /*infos?.5*/ /*?? 0*/) //Portamento Controller (CC84) TEST = 64
 
-            if((prev_continuous != continuous && continuous) || !continuous){
+            if (continuous || prev_continuous != continuous){
                 //Causes audio glitch !
                 wand_noteOn(channel:Int(channel), note: Int(lastNoteForChannel[Int(channel)]), velocity: wand_velocity)
+            } else if (!continuous) {
+                wand_noteOff(channel:Int(channel), note:0, velocity:0)
             }
-            wand_noteOff(channel:Int(channel), note:0, velocity:0)
             synth!.midiEvent(cmd: 0xB0 | channel, d1: 7, d2: muted ? 0 : 127)
 
         } else {

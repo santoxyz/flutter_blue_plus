@@ -398,7 +398,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
   }
 
   public fun wand_sendNoteOn(ch: Int, n: Int, v: Int) {
-    //println (" -> noteON ch $ch n $n v $v")
+    //println (" -> wand_sendNoteON ch $ch n $n v $v")
     val msg = ByteArray(3)
     msg[0] = (0x90 or ch).toByte()
     msg[1] = n.toByte()
@@ -407,6 +407,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
   }
 
   public fun wand_sendNoteOff(ch: Int, n: Int, v: Int) {
+    //println (" -> wand_sendNoteOFF ch $ch n $n v $v stack:" + Exception().printStackTrace())
     val msg = ByteArray(3)
     msg[0] = (0x80 or ch).toByte()
     msg[1] = n.toByte()
@@ -543,7 +544,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
           52 -> { //rotation
             _m = m
             _n = 11;
-            _v = scaleRotation(0, (127*0.6).toInt(), 0, 127, v)
+            _v = scaleRotation(0, (127*0.6).toInt(), 0, (127*0.3).toInt(), v)
             //println("FlutterMidiSynthPlugin.kt sendMidi: scaledRotation: " + _v)
 
           }
@@ -720,11 +721,13 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
       //sendMidi((0xB0 or channel),  84, controller) //Portamento Controller (CC84) TEST = 64
 
       //println("prev_mode=" + prev_mode + " mode=" + mode + " continuous=" + continuous)
-      if((prev_continuous != continuous && continuous) || !continuous){
-        println("setSpecialMode: NOT CONTINUOUS or mode changed - channel=" + channel + " lastNote=" + lastNoteForChannel[channel])
+      if(continuous || prev_continuous != continuous){ //must send a new NoteON in continous mode
+        println("setSpecialMode: sending noteOn - channel=" + channel + " lastNote=" + lastNoteForChannel[channel])
         wand_sendNoteOn(channel, lastNoteForChannel[channel], wand_velocity)
+      } else if (!continuous){
+        println("setSpecialMode: sending noteOff - channel=" + channel)
+        wand_sendNoteOff(channel, 0, 0);
       }
-      wand_sendNoteOff(channel, 0, 0)
 
       sendMidi((0xB0 or channel), 7, if(muted) 0 else 127)
 
