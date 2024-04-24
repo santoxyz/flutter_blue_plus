@@ -19,6 +19,7 @@ import Foundation
     var lastNoteOnOff = 0x80
     var allowedInstrumentsIndexes: [Int] = []
     var allowedInstrumentsExpressions: [Bool] = []
+    var classroom: Bool = false
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "FlutterMidiSynthPlugin", binaryMessenger: registrar.messenger)
@@ -29,8 +30,10 @@ import Foundation
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
         case "initSynth":
-            let i = call.arguments as! Int
-            self.initSynth(instrument: i);
+            let args = call.arguments as? Dictionary<String, Any>
+            let instrument = args?["instrument"] as! Int
+            classroom = args?["classroom"] as! Bool
+            self.initSynth(instrument: i, classroom: classroom);
         case "setInstrument":
             let args = call.arguments as? Dictionary<String, Any>
             let instrument = args?["instrument"] as! Int

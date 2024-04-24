@@ -63,6 +63,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
   private var backgroundBendTaskIsRunning = false
 
   private var wand_velocity = 70
+  private var classroom = false
 
   //NO MORE used as a plugin
   /*
@@ -168,6 +169,9 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
     when (call.method){
       "initSynth" -> {
         println("FlutterMidiSynthPlugin.kt initSynth called - context is " + context)
+        val i = call.argument<Int>("instrument")
+        classroom = call.argument<Boolean?>("classroom")!!
+
         // Create midi driver
         midiBridge = MidiBridge(context)
         println("FlutterMidiSynthPlugin.kt midiBridge " + midiBridge)
@@ -657,9 +661,13 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
     }
 
     if ( m and 0xf0 == 0xC0){ //if this is a ProgramChange, set expression for mac according to allowedInstrumentsExpressions
-      val pos = allowedInstrumentsIndexes.indexOf(n)
-      println("programchange detected - n=" + n + " pos=" + pos + " expression=" + allowedInstrumentsExpressions[pos])
-      expressions[mac!!] = allowedInstrumentsExpressions[pos]
+      if (classroom){
+        println("CLASSROOM - programchange FILTERED - n=" + n )
+      } else {
+        val pos = allowedInstrumentsIndexes.indexOf(n)
+        println("programchange detected - n=" + n + " pos=" + pos + " expression=" + allowedInstrumentsExpressions[pos])
+        expressions[mac!!] = allowedInstrumentsExpressions[pos]
+      }
     }
 
     sendMidi(m + ch, n, vel)
