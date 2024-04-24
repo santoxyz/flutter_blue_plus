@@ -1543,9 +1543,13 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                           [_midiSynth noteOffWithMacWithSynthIdx:0 channel:ch note:d1+_transpose velocity:d2 mac:[peripheral.identifier UUIDString]];
                       break;
                   case 0xC0:
-                          NSLog(@"PROGRAM CHANGE - ch=%d status=%d d1=%d d2=%d",ch,status,d1,d2);
+                      if([_midiSynth hasClassRoom]){
+                          NSLog(@"CLASSROOM MODE -- PROGRAM CHANGE FILTERED !!! - ch=%d status=%d d1=%d d2=%d", ch, status, d1, d2);
+                      } else {
+                          NSLog(@"PROGRAM CHANGE - ch=%d status=%d d1=%d d2=%d", ch, status, d1, d2);
                           //[_midiSynth initSynthWithInstrument:d1];
                           [_midiSynth setInstrumentWithSynthIdx:0 idx:d1 channel:ch mac:[peripheral.identifier UUIDString]];
+                      }
                       break;
                   default:
                   /*
@@ -1563,9 +1567,6 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                           
                           [_midiSynth midiEventWithMacWithSynthIdx:0 command:(ch | status) d1:d1 d2:d2 mac:[peripheral.identifier UUIDString]];
                       break;
-                  }
-                    [_midiSynth midiEventWithMacWithCommand:(ch | status) d1:d1 d2:d2 mac:[peripheral.identifier UUIDString]];
-                    break;
                 }
             }
         }
