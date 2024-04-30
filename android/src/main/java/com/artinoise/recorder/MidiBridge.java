@@ -139,9 +139,9 @@ public class MidiBridge {
         return -1;
     }
 
-    public int MIDIPlay() {
+    public int MIDIPlay(boolean loopForever) {
         if (isFluidsynthEngine()) {
-            return ((FluidSynthDriver)engine).MIDIPlay();
+            return ((FluidSynthDriver)engine).MIDIPlay(loopForever);
         }
         return -1;
     }

@@ -269,7 +269,8 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
       }
       "MIDIPlay" -> {
         println("FlutterMidiSynthplugin: MIDIPlay");
-        val r = midiBridge.MIDIPlay();
+        val loopForever = call.argument<Boolean?>("loopForever")
+        val r = midiBridge.MIDIPlay(loopForever!!);
         result.success(r.toString());
       }
       "MIDIStop" -> {

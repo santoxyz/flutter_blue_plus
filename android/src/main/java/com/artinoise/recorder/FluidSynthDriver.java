@@ -39,7 +39,7 @@ public class FluidSynthDriver extends DriverBase
     //FLUID MEDIAPLAYER API
     ///////////////////////
     public native int MIDIPrepare(String filename, int ticksPerBeat);
-    public native int MIDIPlay();
+    public native int MIDIPlay(boolean loopForever);
     public native int MIDIPause();
     public native int MIDIResume();
     public native int MIDIStop();

@@ -273,10 +273,14 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIPlay(JNIEnv* env, jobject) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIPlay(JNIEnv* env, jobject, jboolean forever) {
     if(player){
+        if(forever){
+            fluid_player_set_loop(player, -1 /*infinitely*/);
+        }
         int res = fluid_player_play(player);
         __android_log_print(ANDROID_LOG_INFO, TAG, "MIDIPlay player = %p res=%d.",player,res);
+
         return res;
     }
     return FLUID_FAILED;

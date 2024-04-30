@@ -53,8 +53,8 @@ class FlutterMidiSynthPlugin {
     return _channel.invokeMethod('MIDIPrepare', {'name':name , 'ticksPerBeat':ticksPerBeat});
   }
 
-  static Future<void> start() async {
-    return _channel.invokeMethod('MIDIPlay');
+  static Future<void> start([bool loopForever = false]) async {
+    return _channel.invokeMethod('MIDIPlay',{"loopForever":loopForever});
   }
 
   static Future<void> stop() async {
