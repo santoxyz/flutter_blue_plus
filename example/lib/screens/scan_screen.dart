@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'device_screen.dart';
 import '../utils/snackbar.dart';
-import '../widgets/connected_device_tile.dart';
+import '../widgets/system_device_tile.dart';
 import '../widgets/scan_result_tile.dart';
 import '../utils/extra.dart';
 
@@ -18,7 +17,7 @@ class ScanScreen extends StatefulWidget {
 }
 
 class _ScanScreenState extends State<ScanScreen> {
-  List<BluetoothDevice> _connectedDevices = [];
+  List<BluetoothDevice> _systemDevices = [];
   List<ScanResult> _scanResults = [];
   bool _isScanning = false;
   late StreamSubscription<List<ScanResult>> _scanResultsSubscription;
@@ -28,21 +27,20 @@ class _ScanScreenState extends State<ScanScreen> {
   void initState() {
     super.initState();
 
-    FlutterBluePlus.systemDevices.then((devices) {
-      _connectedDevices = devices;
-      setState(() {});
-    });
-
     _scanResultsSubscription = FlutterBluePlus.scanResults.listen((results) {
       _scanResults = results;
-      setState(() {});
+      if (mounted) {
+        setState(() {});
+      }
     }, onError: (e) {
       Snackbar.show(ABC.b, prettyException("Scan Error:", e), success: false);
     });
 
     _isScanningSubscription = FlutterBluePlus.isScanning.listen((state) {
       _isScanning = state;
-      setState(() {});
+      if (mounted) {
+        setState(() {});
+      }
     });
   }
 
@@ -55,15 +53,18 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Future onScanPressed() async {
     try {
-      // android is slow when asking for all advertisments,
-      // so instead we only ask for 1/8 of them
-      int divisor = Platform.isAndroid ? 8 : 1;
-      await FlutterBluePlus.startScan(
-          timeout: const Duration(seconds: 15), continuousUpdates: true, continuousDivisor: divisor);
+      _systemDevices = await FlutterBluePlus.systemDevices;
+    } catch (e) {
+      Snackbar.show(ABC.b, prettyException("System Devices Error:", e), success: false);
+    }
+    try {
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
     } catch (e) {
       Snackbar.show(ABC.b, prettyException("Start Scan Error:", e), success: false);
     }
-    setState(() {}); // force refresh of systemDevices
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future onStopPressed() async {
@@ -87,7 +88,9 @@ class _ScanScreenState extends State<ScanScreen> {
     if (_isScanning == false) {
       FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
     }
-    setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
     return Future.delayed(Duration(milliseconds: 500));
   }
 
@@ -103,10 +106,10 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  List<Widget> _buildConnectedDeviceTiles(BuildContext context) {
-    return _connectedDevices
+  List<Widget> _buildSystemDeviceTiles(BuildContext context) {
+    return _systemDevices
         .map(
-          (d) => ConnectedDeviceTile(
+          (d) => SystemDeviceTile(
             device: d,
             onOpen: () => Navigator.of(context).push(
               MaterialPageRoute(
@@ -143,7 +146,7 @@ class _ScanScreenState extends State<ScanScreen> {
           onRefresh: onRefresh,
           child: ListView(
             children: <Widget>[
-              ..._buildConnectedDeviceTiles(context),
+              ..._buildSystemDeviceTiles(context),
               ..._buildScanResultTiles(context),
             ],
           ),

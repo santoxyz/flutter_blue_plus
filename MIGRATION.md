@@ -57,9 +57,11 @@ extension Scan on FlutterBluePlus {
     final controller = StreamController<ScanResult>();
 
     var subscription = FlutterBluePlus.scanResults.listen(
-      (r) => if(r.isNotEmpty) {controller.add(r.first);},
+      (r){if(r.isNotEmpty){controller.add(r.first);}},
       onError: (e, stackTrace) => controller.addError(e, stackTrace),
     );
+
+    Future scanComplete = FlutterBluePlus.isScanning.skip(1).where((e) => e == false).first;
 
     FlutterBluePlus.startScan(
       withServices: withServices,
@@ -68,8 +70,6 @@ extension Scan on FlutterBluePlus {
       oneByOne: true,
       androidUsesFineLocation: androidUsesFineLocation,
     );
-
-    Future scanComplete = FlutterBluePlus.isScanning.where((e) => e == false).first;
 
     scanComplete.whenComplete(() {
       subscription.cancel();

@@ -1,16 +1,14 @@
-
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-class ConnectedDeviceTile extends StatefulWidget {
+class SystemDeviceTile extends StatefulWidget {
   final BluetoothDevice device;
   final VoidCallback onOpen;
   final VoidCallback onConnect;
 
-  const ConnectedDeviceTile({
+  const SystemDeviceTile({
     required this.device,
     required this.onOpen,
     required this.onConnect,
@@ -18,11 +16,10 @@ class ConnectedDeviceTile extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<ConnectedDeviceTile> createState() => _ConnectedDeviceTileState();
+  State<SystemDeviceTile> createState() => _SystemDeviceTileState();
 }
 
-class _ConnectedDeviceTileState extends State<ConnectedDeviceTile> {
-
+class _SystemDeviceTileState extends State<SystemDeviceTile> {
   BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
 
   late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
@@ -33,7 +30,9 @@ class _ConnectedDeviceTileState extends State<ConnectedDeviceTile> {
 
     _connectionStateSubscription = widget.device.connectionState.listen((state) {
       _connectionState = state;
-      setState(() {});
+      if (mounted) {
+        setState(() {});
+      }
     });
   }
 
@@ -51,7 +50,7 @@ class _ConnectedDeviceTileState extends State<ConnectedDeviceTile> {
   Widget build(BuildContext context) {
     return ListTile(
       title: Text(widget.device.platformName),
-      subtitle: Text(widget.device.remoteId.toString()),
+      subtitle: Text(widget.device.remoteId.str),
       trailing: ElevatedButton(
         child: isConnected ? const Text('OPEN') : const Text('CONNECT'),
         onPressed: isConnected ? widget.onOpen : widget.onConnect,
