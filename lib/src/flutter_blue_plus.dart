@@ -13,17 +13,7 @@ class FlutterBluePlus {
 
   /// Singleton boilerplate
   FlutterBluePlus._() {
-    _methods.setMethodCallHandler((MethodCall call) async {
-      _methodStream.add(call);
-    });
-    if (!Platform.isWindows) {
-      setLogLevel(logLevel);
-    }
-  }
-
-  /// Singleton boilerplate
-  FlutterBluePlus._() {
-    _methods.setMethodCallHandler((MethodCall call) async {
+    _methodChannel.setMethodCallHandler((MethodCall call) async {
       _methodStream.add(call);
     });
     if (!Platform.isWindows) {

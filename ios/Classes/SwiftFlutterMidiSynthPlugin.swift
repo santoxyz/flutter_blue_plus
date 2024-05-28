@@ -236,7 +236,7 @@ import Foundation
             DispatchQueue.main.async {
                 print ("background loading of voices completed." )
             }
-        }
+        //}
     }
     
     private func getSequencer(synthIdx: Int, channel: Int) -> Sequencer{
@@ -604,4 +604,5 @@ import Foundation
     public func hasClassRoom() -> Bool {
         return classroom
     }
+
 }
