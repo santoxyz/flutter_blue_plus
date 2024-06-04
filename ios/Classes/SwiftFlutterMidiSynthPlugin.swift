@@ -237,8 +237,6 @@ import Foundation
                 print ("background loading of voices completed." )
             }
         //}
-
-
     }
     
     private func getSequencer(synthIdx: Int, channel: Int) -> Sequencer{

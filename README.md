@@ -9,13 +9,14 @@
 
 **Note: this plugin is continuous work from [FlutterBlue](https://github.com/pauldemarco/flutter_blue).**
 
-Migrating from [FlutterBlue](https://github.com/pauldemarco/flutter_blue)? See [Migration Guides](MIGRATION.md)
+Migrating from [FlutterBlue](https://github.com/pauldemarco/flutter_blue)? See [Migration Guide](MIGRATION.md)
 
 ## Contents
 
 - [Introduction](#introduction)
 - [Usage](#usage)
 - [Getting Started](#getting-started)
+- [Using Ble in App Background](#using-ble-in-app-background)
 - [Reference](#reference)
 - [Debugging](#debugging)
 - [Mocking](#mocking)
@@ -29,27 +30,38 @@ It supports BLE Central Role only (most common).
 
 If you need BLE Peripheral Role, you should check out [FlutterBlePeripheral](https://pub.dev/packages/flutter_ble_peripheral).
 
+## Tutorial
+
+If you are new to Bluetooth, you should start by reading BLE tutorials.
+* [Novel Bits BLE Tutorial](https://novelbits.io/bluetooth-low-energy-ble-complete-guide/)
+* [All About Circuits BLE Tutorial](https://www.allaboutcircuits.com/technical-articles/exploring-the-basics-of-bluetooth-low-energy-a-beginners-guide-to-ble/)
+* [Embetronicx BLE Tutorial](https://embetronicx.com/tutorials/tech_devices/bluetooth-low-energy-ble-introduction-part-1/)
+
 ## ❗ Bluetooth Classic is not supported ❗
 
- i.e. speakers, headphones, mice, keyboards, gamepads, Arduino HC-05 & HC-06, and more are not supported. These all use Bluetooth Classic.
+ i.e. **Arduino HC-05 & HC-06,** speakers, headphones, mice, keyboards, gamepads, and more are **not** supported. These all use Bluetooth Classic.
 
  Also, iBeacons are **_not_** supported on iOS. Apple requires you to use CoreLocation.
 
 ## Cross-Platform Bluetooth Low Energy
 
-FlutterBluePlus aims to offer the most from all supported platforms: iOS, macOS, Android.
+FlutterBluePlus supports nearly every feature on all supported platforms: iOS, macOS, Android.
 
-The code is written to be simple, robust, and incredibly easy to understand.
+FlutterBluePlus was written to be simple, robust, and easy to understand.
 
 ## No Dependencies
 
-FlutterBluePlus has zero dependencies besides Flutter, Android, and iOS themselves.
+FlutterBluePlus has zero dependencies besides Flutter, Android, iOS, and macOS themselves.
 
 This makes FlutterBluePlus very stable, and easy to maintain.
 
 ## ⭐ Stars ⭐
 
 Please star this repo & on [pub.dev](https://pub.dev/packages/flutter_blue_plus). We all benefit from having a larger community.
+
+## Discord 💬
+
+[![Chat](https://img.shields.io/discord/634853295160033301.svg?style=flat-square&colorB=758ED3)](https://discord.gg/Yk5Efra) There is a community Discord server. ([Link](https://discord.gg/Yk5Efra))
 
 ## Example
 
@@ -66,9 +78,9 @@ flutter run
 
 ## Usage
 
-### :fire: Error Handling :fire:
+### 🔥 Error Handling 🔥
 
-Flutter Blue Plus takes error handling very seriously. 
+Flutter Blue Plus takes error handling seriously. 
 
 Every error returned by the native platform is checked and thrown as an exception where appropriate. See [Reference](#reference) for a list of throwable functions.
 
@@ -109,7 +121,7 @@ if (await FlutterBluePlus.isSupported == false) {
 // handle bluetooth on & off
 // note: for iOS the initial state is typically BluetoothAdapterState.unknown
 // note: if you have permissions issues you will get stuck at BluetoothAdapterState.unauthorized
-FlutterBluePlus.adapterState.listen((BluetoothAdapterState state) {
+var subscription = FlutterBluePlus.adapterState.listen((BluetoothAdapterState state) {
     print(state);
     if (state == BluetoothAdapterState.on) {
         // usually start scanning, connecting, etc
@@ -123,39 +135,46 @@ FlutterBluePlus.adapterState.listen((BluetoothAdapterState state) {
 if (Platform.isAndroid) {
     await FlutterBluePlus.turnOn();
 }
+
+// cancel to prevent duplicate listeners
+subscription.cancel();
 ```
 
 ### Scan for devices
 
 If your device is not found, see [Common Problems](#common-problems).
 
-It is recommended to set scan filters to reduce main thread & platform channel usage.
+**Note:** It is recommended to set scan filters to reduce main thread & platform channel usage.
 
 ```dart
 // listen to scan results
-// Note: `onScanResults` only returns live scan results, i.e. during scanning
-// Use: `scanResults` if you want live scan results *or* the previous results
+// Note: `onScanResults` only returns live scan results, i.e. during scanning. Use
+//  `scanResults` if you want live scan results *or* the results from a previous scan.
 var subscription = FlutterBluePlus.onScanResults.listen((results) {
         if (results.isNotEmpty) {
             ScanResult r = results.last; // the most recently found device
             print('${r.device.remoteId}: "${r.advertisementData.advName}" found!');
         }
     },
-    onError(e) => print(e);
+    onError: (e) => print(e),
 );
+
+// cleanup: cancel subscription when scanning stops
+FlutterBluePlus.cancelWhenScanComplete(subscription);
 
 // Wait for Bluetooth enabled & permission granted
 // In your real app you should use `FlutterBluePlus.adapterState.listen` to handle all states
 await FlutterBluePlus.adapterState.where((val) => val == BluetoothAdapterState.on).first;
 
-// Start scanning
-await FlutterBluePlus.startScan();
+// Start scanning w/ timeout
+// Optional: use `stopScan()` as an alternative to timeout
+await FlutterBluePlus.startScan(
+  withServices:[Guid("180D")], // match any of the specified services
+  withNames:["Bluno"], // *or* any of the specified names
+  timeout: Duration(seconds:15));
 
-// Stop scanning
-await FlutterBluePlus.stopScan();
-
-// cancel to prevent duplicate listeners
-subscription.cancel();
+// wait for scanning to stop
+await FlutterBluePlus.isScanning.where((val) => val == false).first;
 ```
 
 ### Connect to a device
@@ -171,6 +190,15 @@ var subscription = device.connectionState.listen((BluetoothConnectionState state
     }
 });
 
+// cleanup: cancel subscription when disconnected
+//   - [delayed] This option is only meant for `connectionState` subscriptions.  
+//     When `true`, we cancel after a small delay. This ensures the `connectionState` 
+//     listener receives the `disconnected` event.
+//   - [next] if true, the the stream will be canceled only on the *next* disconnection,
+//     not the current disconnection. This is useful if you setup your subscriptions
+//     before you connect.
+device.cancelWhenDisconnected(subscription, delayed:true, next:true);
+
 // Connect to the device
 await device.connect();
 
@@ -179,6 +207,24 @@ await device.disconnect();
 
 // cancel to prevent duplicate listeners
 subscription.cancel();
+```
+
+### Auto Connect
+
+Connects whenever your device is found.
+
+```dart
+// enable auto connect
+//  - note: autoConnect is incompatible with mtu argument, so you must call requestMtu yourself
+await device.connect(autoConnect:true, mtu:null)
+
+// wait until connection
+//  - when using autoConnect, connect() always returns immediately, so we must
+//    explicity listen to `device.connectionState` to know when connection occurs 
+await device.connectionState.where((val) => val == BluetoothConnectionState.connected).first;
+
+// disable auto connect
+await device.disconnect()
 ```
 
 ### MTU
@@ -264,7 +310,7 @@ extension splitWrite on BluetoothCharacteristic {
 
 ### Subscribe to a characteristic
 
-// If `onValueReceived` is never called, see [Common Problems](#common-problems) in the README.
+If `onValueReceived` is never called, see [Common Problems](#common-problems) in the README.
 
 ```dart
 final subscription = characteristic.onValueReceived.listen((value) {
@@ -316,6 +362,21 @@ for(BluetoothDescriptor d in descriptors) {
 
 // Writes to a descriptor
 await d.write([0x12, 0x34])
+```
+
+### Services Changed Characteristic
+
+FlutterBluePlus automatically listens to the Services Changed Characteristic (0x2A05)
+
+In FlutterBluePlus, we call it `onServicesReset` because you must re-discover services.
+
+```dart
+// - uses the GAP Services Changed characteristic (0x2A05)
+// - you must call discoverServices() again
+device.onServicesReset.listen(() async {
+    print("Services Reset");
+    await device.discoverServices();
+});
 ```
 
 ### Get Connected Devices
@@ -399,7 +460,7 @@ To mock `FlutterBluePlus` for development, refer to the [Mocking Guide](MOCKING.
 flutter_blue_plus is compatible only from version 21 of Android SDK so you should change this in **android/app/build.gradle**:
 
 ```dart
-Android {
+android {
   defaultConfig {
      minSdkVersion: 21
 ```
@@ -429,7 +490,7 @@ https://developer.android.com/about/versions/12/features/bluetooth-permissions -
 
 ### Add permissions for Android (With Fine Location)
 
-If you want to use Bluetooth to determine location.
+If you want to use Bluetooth to determine location, or support iBeacons.
 
 In the **android/app/src/main/AndroidManifest.xml** add:
 
@@ -452,7 +513,7 @@ https://developer.android.com/about/versions/12/features/bluetooth-permissions -
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="28" />
 ```
 
-And set androidUsesFineLocation when scanning:
+And set **androidUsesFineLocation** when scanning:
 ```dart
 // Start scanning
 flutterBlue.startScan(timeout: Duration(seconds: 4), androidUsesFineLocation: true);
@@ -479,20 +540,47 @@ PlatformException(startScan, Field androidScanMode_ for m0.e0 not found. Known f
 In the **ios/Runner/Info.plist** let’s add:
 
 ```dart
-	<dict>
-	    <key>NSBluetoothAlwaysUsageDescription</key>
-	    <string>Need BLE permission</string>
-	    <key>NSBluetoothPeripheralUsageDescription</key>
-	    <string>Need BLE permission</string>
-	    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	    <string>Need Location permission</string>
-	    <key>NSLocationAlwaysUsageDescription</key>
-	    <string>Need Location permission</string>
-	    <key>NSLocationWhenInUseUsageDescription</key>
-	    <string>Need Location permission</string>
+<dict>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>This app needs Bluetooth to function</string>
 ```
 
 For location permissions on iOS see more at: [https://developer.apple.com/documentation/corelocation/requesting_authorization_for_location_services](https://developer.apple.com/documentation/corelocation/requesting_authorization_for_location_services)
+
+### Add permissions for macOS 
+
+Make sure you have granted access to the Bluetooth hardware:
+
+`Xcode -> Runners -> Targets -> Runner-> Signing & Capabilities -> App Sandbox -> Hardware -> Enable Bluetooth`
+
+<img width="528" alt="Screenshot 2023-12-11 at 10 32 04 AM" src="https://github.com/boskokg/flutter_blue_plus/assets/1863934/554079ef-4627-4dfc-97e3-1f07f84a0f3c">
+
+## Using Ble in App Background
+
+**This is an advanced use case**. FlutterBluePlus does not support everything. You may have to fork it. PRs are welcome.
+
+### iOS
+
+Documentation: https://developer.apple.com/library/archive/documentation/NetworkingInternetWeb/Conceptual/CoreBluetooth_concepts/CoreBluetoothBackgroundProcessingForIOSApps/PerformingTasksWhileYourAppIsInTheBackground.html
+
+Add the following to your `Info.plist`
+
+```
+<key>UIBackgroundModes</key>
+<array>
+    <string>bluetooth-central</string>
+</array>
+```
+
+When this key-value pair is included in the app’s Info.plist file, the system wakes up your app to process ble `read`, `write`, and `subscription` events.
+
+You may also have to use https://pub.dev/packages/flutter_isolate
+
+**Note**: Upon being woken up, an app has around 10 seconds to complete a task. Apps that spend too much time executing in the background can be throttled back by the system or killed.
+
+### Android
+
+You can try using https://pub.dev/packages/flutter_foreground_task or possibly https://pub.dev/packages/flutter_isolate
 
 ## Reference
 
@@ -504,8 +592,10 @@ For location permissions on iOS see more at: [https://developer.apple.com/docume
 |                        |      Android       |        iOS         | Throws | Description                                                |
 | :--------------------- | :----------------: | :----------------: | :----: | :----------------------------------------------------------|
 | setLogLevel            | :white_check_mark: | :white_check_mark: |        | Configure plugin log level                                 |
+| setOptions             | :white_check_mark: | :white_check_mark: |        | Set configurable bluetooth options                         |
 | isSupported            | :white_check_mark: | :white_check_mark: |        | Checks whether the device supports Bluetooth               |
 | turnOn                 | :white_check_mark: |                    | :fire: | Turns on the bluetooth adapter                             |
+| adapterStateNow     ⚡  | :white_check_mark: | :white_check_mark: |        | Current state of the bluetooth adapter                     |
 | adapterState        🌀 | :white_check_mark: | :white_check_mark: |        | Stream of on & off states of the bluetooth adapter         |
 | startScan              | :white_check_mark: | :white_check_mark: | :fire: | Starts a scan for Ble devices                              |
 | stopScan               | :white_check_mark: | :white_check_mark: | :fire: | Stop an existing scan for Ble devices                      |
@@ -544,6 +634,7 @@ For location permissions on iOS see more at: [https://developer.apple.com/docume
 | connect                   | :white_check_mark: | :white_check_mark: | :fire: | Establishes a connection to the device                     |
 | disconnect                | :white_check_mark: | :white_check_mark: | :fire: | Cancels an active or pending connection to the device      |
 | isConnected             ⚡ | :white_check_mark: | :white_check_mark: |        | Is this device currently connected to *your app*?          |
+| isDisonnected           ⚡ | :white_check_mark: | :white_check_mark: |        | Is this device currently disconnected from *your app*?     |
 | connectionState        🌀 | :white_check_mark: | :white_check_mark: |        | Stream of connection changes for the Bluetooth Device      |
 | discoverServices          | :white_check_mark: | :white_check_mark: | :fire: | Discover services                                          |
 | servicesList            ⚡ | :white_check_mark: | :white_check_mark: |        | The current list of available services                     |
@@ -605,17 +696,111 @@ Now you can edit the FlutterBluePlus code yourself.
 
 Many common problems are easily solved.
 
+Adapter:
+- [bluetooth must be turned on](#bluetooth-must-be-turned-on)
+- [adapterState is not 'on' but my Bluetooth is on](#adapterstate-is-not-on-but-my-bluetooth-is-on)
+- [adapterState is called multiple times](#adapterstate-is-called-multiple-times)
+
+Scanning:
+- [Scanning does not find my device](#scanning-does-not-find-my-device)
+- [Scanned device never goes away](#scanned-device-never-goes-away)
+- [iBeacons not showing](#ibeacons-not-showing)
+
+Connecting:
+- [Connection fails](#connection-fails)
+- [connectionState is called multiple times](#connectionstate-is-called-multiple-times)
+- [remoteId is different on Android vs iOS](#the-remoteid-is-different-on-android-versus-ios--macos)
+- [iOS: "[Error] The connection has timed out unexpectedly."](#ios-error-the-connection-has-timed-out-unexpectedly)
+
+Reading & Writing:
+- [List of Bluetooth GATT Errors](#list-of-bluetooth-gatt-errors)
+- [Characteristic write fails](#characteristic-write-fails)
+- [Characteristic read fails](#characteristic-read-fails)
+
+Subscriptions:
+- [onValueReceived is never called (or lastValueStream)](#onvaluereceived-is-never-called-or-lastvaluestream)
+- [onValueReceived data is split up (or lastValueStream)](#onvaluereceived-data-is-split-up-or-lastvaluestream)
+- [onValueReceived is called with duplicate data (or lastValueStream)](#onvaluereceived-is-called-with-duplicate-data-or-lastvaluestream)
+
+Android Errors:
+- [ANDROID_SPECIFIC_ERROR](#android_specific_error)
+- [android pairing popup appears twice](#android-pairing-popup-appears-twice)
+
+Flutter Errors:
+- [MissingPluginException(No implementation found for method XXXX ...)](#missingpluginexceptionno-implementation-found-for-method-xxxx-)
+
+---
+
+### "bluetooth must be turned on"
+
+You need to wait for the bluetooth adapter to fully turn on. 
+
+`await FlutterBluePlus.adapterState.where((state) => state == BluetoothAdapterState.on).first;`
+
+You can also use `FlutterBluePlus.adapterState.listen(...)`. See [Usage](#usage).
+
+---
+
+### adapterState is not 'on' but my Bluetooth is on
+
+**For iOS:**
+
+`adapterState` always starts as `unknown`. You need to wait longer for the service to initialize. Use this code:
+
+```
+// wait for actual adapter state, up to 3 seconds
+Set<BluetoothAdapterState> inProgress = {BluetoothAdapterState.unknown, BluetoothAdapterState.turningOn};
+var adapterState = FlutterBluePlus.adapterState.where((v) => !inProgress.contains(v)).first;
+await adapterState.timeout(const Duration(seconds: 3)).onError((error, stackTrace) {
+   throw Exception("Could not determine Bluetooth state. ${FlutterBluePlus.adapterStateNow}");
+});
+
+// check adapter state
+if (FlutterBluePlus.adapterStateNow != BluetoothAdapterState.on) {
+   throw Exception("Bluetooth Is Not On. ${FlutterBluePlus.adapterStateNow}");
+}
+```
+
+If `adapterState` is `unavailable`, you must add access to Bluetooth Hardware in the app's Xcode settings. See [Getting Started](#getting-started).
+
+**For Android:**
+
+Check that your device supports Bluetooth & has permissions.
+
+---
+
+### adapterState is called multiple times
+
+You are forgetting to cancel the original `FlutterBluePlus.adapterState.listen` resulting in multiple listeners.
+
+```dart
+// tip: using ??= makes it easy to only make new listener when currently null
+final subscription ??= FlutterBluePlus.adapterState.listen((value) {
+    // ...
+});
+
+// also, make sure you cancel the subscription when done!
+subscription.cancel()
+```
+
 ---
 
 ### Scanning does not find my device
 
-**1. your device uses bluetooth classic, not BLE.**
+**1. try using another ble scanner app**
+
+* **iOS**: [nRF Connect](https://apps.apple.com/us/app/nrf-connect-for-mobile/id1054362403)
+* **Android**: [BLE Scanner](https://play.google.com/store/apps/details?id=com.macdom.ble.blescanner)
+
+Install a BLE scanner app on your phone. Can it find your device?
+
+**2. your device uses bluetooth classic, not BLE.**
 
 Headphones, speakers, keyboards, mice, gamepads, & printers all use Bluetooth Classic. 
 
 These devices may be found in System Settings, but they cannot be connected to by FlutterBluePlus. FlutterBluePlus only supports Bluetooth Low Energy.
 
-**2. your device stopped advertising.**
+**3. your device stopped advertising.**
 
 - you might need to reboot your device
 - you might need to put your device in "discovery mode"
@@ -636,19 +821,31 @@ for (var d in system) {
 }
 ```
 
-**3. your scan filters are wrong.**
+**4. your scan filters are wrong.**
 
 - try removing all scan filters
 - for `withServices` to work, your device must actively advertise the serviceUUIDs it supports
 
+---
 
-**4. try a ble scanner app**
+### Scanned device never goes away
 
-Search the App Store for a BLE scanner apps and install it on your phone, and another phone.
+This is expected.
 
-**Question 1:** When the issue is happening, is *your phone* (the phone with your flutter app) able to scan it using the 3rd party scanner?
+You must set the `removeIfGone` scan option if you want the device to go away when no longer available.
 
-**Question 2:** When the issue is happening, is *another phone* able to scan it using the 3rd party scanner?
+---
+
+### iBeacons Not Showing
+
+**iOS:**
+
+iOS does not support iBeacons using CoreBluetooth. You must find a plugin meant for CoreLocation.
+
+**Android:**
+
+1. you need to enable location permissions, see [Getting Started](#getting-started)
+2. you must pass `androidUsesFineLocation:true` to the `startScan` method.
 
 ---
 
@@ -676,6 +873,22 @@ Bluetooth is a complicated system service, and can enter a bad state.
 
 ---
 
+### connectionState is called multiple times
+
+You are forgetting to cancel the original `device.connectionState.listen` resulting in multiple listeners.
+
+```dart
+// tip: using ??= makes it easy to only make new listener when currently null
+final subscription ??= FlutterBluePlus.device.connectionState.listen((value) {
+    // ...
+});
+
+// also, make sure you cancel the subscription when done!
+subscription.cancel()
+```
+
+---
+
 ### The remoteId is different on Android versus iOS & macOS
 
 This is expected. There is no way to avoid it.
@@ -687,6 +900,123 @@ e.g. `6920a902-ba0e-4a13-a35f-6bc91161c517`
 Android uses the mac address of the bluetooth device. It never changes.
 
 e.g. `05:A4:22:31:F7:ED`
+
+---
+
+### iOS: "[Error] The connection has timed out unexpectedly."
+
+You can google this error. It is a common iOS ble error code.
+
+It means your device stopped working. FlutterBluePlus cannot fix it.
+
+---
+
+### List of Bluetooth GATT Errors
+
+These GATT error codes are part of the BLE Specification. 
+
+**These are *responses* from your ble device because you are sending an invalid request.**
+
+FlutterBluePlus cannot fix these errors. You are doing something wrong & your device is responding with an error.
+
+**GATT errors as they appear on iOS**:
+```
+apple-code: 1  | The handle is invalid.
+apple-code: 2  | Reading is not permitted.
+apple-code: 3  | Writing is not permitted.
+apple-code: 4  | The command is invalid.
+apple-code: 6  | The request is not supported.
+apple-code: 7  | The offset is invalid.
+apple-code: 8  | Authorization is insufficient.
+apple-code: 9  | The prepare queue is full.
+apple-code: 10 | The attribute could not be found.
+apple-code: 11 | The attribute is not long.
+apple-code: 12 | The encryption key size is insufficient.
+apple-code: 13 | The value's length is invalid.
+apple-code: 14 | Unlikely error.
+apple-code: 15 | Encryption is insufficient.
+apple-code: 16 | The group type is unsupported.
+apple-code: 17 | Resources are insufficient.
+apple-code: 18 | Unknown ATT error.
+```
+
+**GATT errors as they appear on Android**:
+```
+android-code: 1  | GATT_INVALID_HANDLE
+android-code: 2  | GATT_READ_NOT_PERMITTED
+android-code: 3  | GATT_WRITE_NOT_PERMITTED
+android-code: 4  | GATT_INVALID_PDU
+android-code: 5  | GATT_INSUFFICIENT_AUTHENTICATION
+android-code: 6  | GATT_REQUEST_NOT_SUPPORTED
+android-code: 7  | GATT_INVALID_OFFSET
+android-code: 8  | GATT_INSUFFICIENT_AUTHORIZATION
+android-code: 9  | GATT_PREPARE_QUEUE_FULL
+android-code: 10 | GATT_ATTR_NOT_FOUND
+android-code: 11 | GATT_ATTR_NOT_LONG
+android-code: 12 | GATT_INSUFFICIENT_KEY_SIZE
+android-code: 13 | GATT_INVALID_ATTRIBUTE_LENGTH
+android-code: 14 | GATT_UNLIKELY
+android-code: 15 | GATT_INSUFFICIENT_ENCRYPTION
+android-code: 16 | GATT_UNSUPPORTED_GROUP
+android-code: 17 | GATT_INSUFFICIENT_RESOURCES
+```
+
+**Descriptions**:
+```
+1   | Invalid Handle                 | The attribute handle given was not valid on this server.
+2   | Read Not Permitted             | The attribute cannot be read.
+3   | Write Not Permitted            | The attribute cannot be written.
+4   | Invalid PDU                    | The attribute PDU was invalid.
+5   | Insufficient Authentication    | The attribute requires authentication before it can be read or written.
+6   | Request Not Supported          | Attribute server does not support the request received from the client.
+7   | Invalid Offset                 | Offset specified was past the end of the attribute.
+8   | Insufficient Authorization     | The attribute requires an authorization before it can be read or written.
+9   | Prepare Queue Full             | Too many prepare writes have been queued.
+10  | Attribute Not Found            | No attribute found within the given attribute handle range.
+11  | Attribute Not Long             | The attribute cannot be read or written using the Read Blob or Write Blob requests.
+12  | Insufficient Key Size          | The Encryption Key Size used for encrypting this link is insufficient.
+13  | Invalid Attribute Value Length | The attribute value length is invalid for the operation.
+14  | Unlikely Error                 | The request has encountered an unlikely error and cannot be completed.
+15  | Insufficient Encryption        | The attribute requires encryption before it can be read or written.
+16  | Unsupported Group Type         | The attribute type is not a supported grouping as defined by a higher layer.
+17  | Insufficient Resources         | Insufficient Resources to complete the request.
+```
+
+---
+
+### characteristic write fails
+
+First, check the [List of Bluetooth GATT Errors](#list-of-bluetooth-gatt-errors) for your error.
+
+**1. your bluetooth device turned off, or is out of range**
+
+If your device turns off or crashes during a write, it will cause a failure.
+
+**2. Your Bluetooth device has bugs**
+
+Maybe your device crashed, or is not sending a response due to software bugs.
+
+**3. there is radio interference**
+
+Bluetooth is wireless and will not always work.
+
+---
+
+### Characteristic read fails
+
+First, check the [List of Bluetooth GATT Errors](#list-of-bluetooth-gatt-errors) for your error.
+
+**1. your bluetooth device turned off, or is out of range**
+
+If your device turns off or crashes during a read, it will cause a failure.
+
+**2. Your Bluetooth device has bugs**
+
+Maybe your device crashed, or is not sending a response due to software bugs.
+
+**3. there is radio interference**
+
+Bluetooth is wireless and will not always work.
 
 ---
 
@@ -726,12 +1056,12 @@ If it still happens, it is a problem with your peripheral device.
 
 ### onValueReceived is called with duplicate data (or lastValueStream)
 
-You are probably forgetting to cancel the original `stream.listen` resulting in multiple listens.
+You are probably forgetting to cancel the original `chr.onValueReceived.listen` resulting in multiple listens.
 
 The easiest solution is to use `device.cancelWhenDisconnected(subscription)` to cancel device subscriptions.
 
 ```dart
-final subscription = characteristic.onValueReceived.listen((value) {
+final subscription = chr.onValueReceived.listen((value) {
     // ...
 });
 
@@ -743,82 +1073,6 @@ await characteristic.setNotifyValue(true);
 
 ---
 
-### characteristic writes fails
-
-**1. The characteristic is not writeable**
-
-Not all characteristics support `write`.
- 
-Your device must have configured this characteristic to support `write`.
-
-**2. The data length is too long**
-
-Characteristics only support writes up to a certain size. 
-
-`writeWithoutResponse`: you can only write up to (MTU-3) at a time. This is a BLE limitation.
-
-`write (with response)`: look in the [Usage](#usage) section for functions you can use to solve this issue.
-
-**3. The characteristic does not support writeWithoutResponse**
-
-Not all characteristics support `writeWithoutResponse`. 
- 
-Your device must have configured this characteristic to support `writeWithoutResponse`.
-
-**4. your bluetooth device turned off, or is out of range**
-
-If your device turns off mid-write, it will cause a failure.
-
-**5. Your Bluetooth device has bugs**
-
-Maybe your device crashed, or is not sending a response due to software bugs.
-
-**6. there is radio interference**
-
-Bluetooth is wireless and will not always work.
-
----
-
-### Characteristic read fails
-
-**1. the characteristic is not readable**
-
-Not all characteristics support `read`.
- 
-Your device must have configured this characteristic to support `read`.
-
-**2. your bluetooth device turned off, or is out of range**
-
-If your device turns off mid-read, it will cause a failure.
-
-**3. Your Bluetooth device has bugs**
-
-Maybe your device crashed, or is not sending a response due to software bugs.
-
-**4. there is radio interference**
-
-Bluetooth is wireless and will not always work.
-
----
-
-### "bluetooth must be turned on"
-
-You need to wait for the bluetooth adapter to fully turn on. 
-
-`await FlutterBluePlus.adapterState.where((state) => state == BluetoothAdapterState.on).first;`
-
-You can also use `FlutterBluePlus.adapterState.listen(...)`. See [Usage](#usage).
-
----
-
-### iOS: "[Error] The connection has timed out unexpectedly."
-
-You can google this error. It is a common iOS ble error code.
-
-It means your device stopped working. FlutterBluePlus cannot fix it.
-
----
-
 ### ANDROID_SPECIFIC_ERROR
 
 There is no 100% solution.  
@@ -826,6 +1080,14 @@ There is no 100% solution.
 FBP already has mitigations for this error, but Android will still fail with this code randomly. 
 
 The recommended solution is to `catch` the error, and retry.
+
+---
+
+### android pairing popup appears twice
+
+This is a bug in android itself.
+
+You can call `createBond()` yourself just after connecting and this will resolve the issue.
 
 ---
 

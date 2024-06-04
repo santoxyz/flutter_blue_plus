@@ -17,7 +17,7 @@
 
 #define Log(LEVEL, FORMAT, ...) [self log:LEVEL format:@"[FBP-iOS] " FORMAT, ##__VA_ARGS__]
 
-NSString * const CCCD = @"00002902-0000-1000-8000-00805f9b34fb";
+NSString * const CCCD = @"2902";
 
 @interface ServicePair : NSObject
 @property (strong, nonatomic) CBService *primary;
@@ -64,6 +64,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 @property(nonatomic) NSDictionary *scanFilters;
 @property(nonatomic) NSTimer *checkForMtuChangesTimer;
 @property(nonatomic) LogLevel logLevel;
+@property(nonatomic) NSNumber *showPowerAlert;
 @property(nonatomic, retain) SwiftFlutterMidiSynthPlugin *midiSynth;
 @property int transpose;
 @end
@@ -92,6 +93,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     instance.writeDescs = [NSMutableDictionary new];
     instance.scanCounts = [NSMutableDictionary new];
     instance.logLevel = LDEBUG;
+    instance.showPowerAlert = @(YES);
 
     [registrar addMethodCallDelegate:instance channel:methodChannel];
 
@@ -126,14 +128,24 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     {
         Log(LDEBUG, @"handleMethodCall: %@", call.method);
 
+        if ([@"setOptions" isEqualToString:call.method])
+        {
+            NSDictionary *args = (NSDictionary*) call.arguments;
+            self.showPowerAlert = args[@"show_power_alert"];
+            result(@YES);
+            return;
+        }
+
         // initialize adapter
         if (self.centralManager == nil)
         {
             Log(LDEBUG, @"initializing CBCentralManager");
 
             NSDictionary *options = @{
-                CBCentralManagerOptionShowPowerAlertKey: @(YES)
+                CBCentralManagerOptionShowPowerAlertKey: self.showPowerAlert
             };
+
+            Log(LDEBUG, @"show power alert: %@", [self.showPowerAlert boolValue] ? @"yes" : @"no");
 
             self.centralManager = [[CBCentralManager alloc] initWithDelegate:self queue:nil options:options];
         }
@@ -151,7 +163,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
         // check that we have an adapter, except for the 
         // functions that don't need it
         if (self.centralManager == nil && 
-            [@"flutterHotRestart" isEqualToString:call.method] == false &&
+            [@"flutterRestart" isEqualToString:call.method] == false &&
             [@"connectedCount" isEqualToString:call.method] == false &&
             [@"setLogLevel" isEqualToString:call.method] == false &&
             [@"isSupported" isEqualToString:call.method] == false &&
@@ -162,7 +174,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             return;
         }
 
-        if ([@"flutterHotRestart" isEqualToString:call.method])
+        if ([@"flutterRestart" isEqualToString:call.method])
         {
             // no adapter?
             if (self.centralManager == nil) {
@@ -174,7 +186,9 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                 [self.centralManager stopScan];
             }
 
-            [self disconnectAllDevices:@"flutterHotRestart"];
+            // all dart state is reset after flutter restart
+            // (i.e. Hot Restart) so also reset native state
+            [self disconnectAllDevices:@"flutterRestart"];
 
             Log(LDEBUG, @"connectedPeripherals: %lu", self.connectedPeripherals.count);
 
@@ -266,11 +280,27 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                 [scanOpts setObject:[NSNumber numberWithBool:YES] forKey:CBCentralManagerScanOptionAllowDuplicatesKey];
             }
 
-            // services filter
+            // filters implemented by FBP, not the OS
+            BOOL hasCustomFilters =
+                [self hasFilter:@"with_remote_ids"] ||
+                [self hasFilter:@"with_names"] ||
+                [self hasFilter:@"with_keywords"] ||
+                [self hasFilter:@"with_msd"] ||
+                [self hasFilter:@"with_service_data"];
+
+            // filter services
             NSArray *services = [NSArray array];
             for (int i = 0; i < [withServices count]; i++) {
                 NSString *uuid = withServices[i];
                 services = [services arrayByAddingObject:[CBUUID UUIDWithString:uuid]];
+            }
+
+            // If any custom filter is set then we cannot filter by services.
+            // Why? An advertisement can match either the service filter *or*
+            // the custom filter. It does not have to match both. So we cannot have
+            // iOS & macOS filtering out any advertisements.
+            if (hasCustomFilters) {
+                services = [NSArray array];
             }
 
             // clear counts
@@ -323,9 +353,15 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                 return;
             }
 
+            // already connecting?
+            if ([self.currentlyConnectingPeripherals objectForKey:remoteId] != nil) {
+                Log(LDEBUG, @"already connecting");
+                result(@YES); // still work to do
+                return;
+            }
+
             // already connected?
-            CBPeripheral *peripheral = [self getConnectedPeripheral:remoteId];
-            if (peripheral != nil) {
+            if ([self getConnectedPeripheral:remoteId] != nil) {
                 Log(LDEBUG, @"already connected");
                 result(@NO); // no work to do
                 return;
@@ -340,8 +376,8 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             }
 
             // check the devices iOS knowns about
-            NSArray<CBPeripheral *> *peripherals = [self.centralManager retrievePeripheralsWithIdentifiers:@[uuid]];
-            for (CBPeripheral *p in peripherals)
+            CBPeripheral *peripheral = nil;
+            for (CBPeripheral *p in [self.centralManager retrievePeripheralsWithIdentifiers:@[uuid]])
             {
                 if ([[p.identifier UUIDString] isEqualToString:remoteId])
                 {
@@ -366,7 +402,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             NSMutableDictionary *options = [[NSMutableDictionary alloc] init];
             if (@available(iOS 17, *)) {
                 // note: use CBConnectPeripheralOptionEnableAutoReconnect constant
-                // when iOS 17 is more widely available
+                // when all developers can be excpected to be on iOS 17+
                 [options setObject:autoConnect forKey:@"kCBConnectOptionEnableAutoReconnect"];
             } 
 
@@ -384,9 +420,12 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 
             // already disconnected?
             CBPeripheral *peripheral = nil;
-            if (peripheral == nil) {
-                Log(LDEBUG, @"disconnect: canceling connection in progress");
+            if (peripheral == nil ) {
                 peripheral = [self.currentlyConnectingPeripherals objectForKey:remoteId];
+                if (peripheral != nil) {
+                    Log(LDEBUG, @"disconnect: cancelling connection in progress");
+                    [self.currentlyConnectingPeripherals removeObjectForKey:remoteId];
+                }   
             }
             if (peripheral == nil) {
                 peripheral = [self getConnectedPeripheral:remoteId];
@@ -397,6 +436,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                 return;
             }
 
+            // disconnect
             [self.centralManager cancelPeripheralConnection:peripheral];
             
             result(@YES);
@@ -946,7 +986,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             [self.methodChannel invokeMethod:@"OnConnectionStateChanged" arguments:result];
         } 
         
-        if ([func isEqualToString:@"flutterHotRestart"] && [self isAdapterOn]) {
+        if ([func isEqualToString:@"flutterRestart"] && [self isAdapterOn]) {
             // request disconnection
             [self.centralManager cancelPeripheralConnection:peripheral];
         }
@@ -1038,12 +1078,14 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 {
     Log(LDEBUG, @"centralManagerDidUpdateState %@", [self cbManagerStateString:self.centralManager.state]);
 
-    // was the adapter turned off?
-    if (self.centralManager.state != CBManagerStatePoweredOn) {
-        [self disconnectAllDevices:@"adapterTurnOff"];
-    }
-
     int adapterState = [self bmAdapterStateEnum:self.centralManager.state];
+
+    // stop scanning when adapter is turned off. 
+    // Otherwise, scanning automatically resumes when the adapter is
+    // turned back on. I don't think most users expect that.
+    if (self.centralManager.state != CBManagerStatePoweredOn) {
+        [self.centralManager stopScan];
+    }
 
     // See BmBluetoothAdapterState
     NSDictionary* response = @{
@@ -1051,6 +1093,11 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     };
 
     [self.methodChannel invokeMethod:@"OnAdapterStateChanged" arguments:response];
+
+    // disconnect all devices
+    if (self.centralManager.state != CBManagerStatePoweredOn) {
+        [self disconnectAllDevices:@"adapterTurnOff"];
+    }
 }
 
 - (void)centralManager:(CBCentralManager *)central
@@ -1066,41 +1113,73 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     [self.knownPeripherals setObject:peripheral forKey:remoteId];
 
     // advertising data
+    NSArray *advServices = advertisementData[CBAdvertisementDataServiceUUIDsKey];
     NSString *advName = advertisementData[CBAdvertisementDataLocalNameKey];
     NSData *advMsd = advertisementData[CBAdvertisementDataManufacturerDataKey];
     NSDictionary* advSd = advertisementData[CBAdvertisementDataServiceDataKey];
 
-    // remoteIds
-    if (![self filterRemoteIds:self.scanFilters[@"with_remote_ids"] target:remoteId]) {
+    BOOL allow = NO;
+
+    // are any filters set?
+    BOOL isAnyFilterSet = [self hasFilter:@"with_services"] ||
+                          [self hasFilter:@"with_remote_ids"] ||
+                          [self hasFilter:@"with_names"] ||
+                          [self hasFilter:@"with_keywords"] ||
+                          [self hasFilter:@"with_msd"] ||
+                          [self hasFilter:@"with_service_data"];
+
+    // no filters set? allow all
+    if (!isAnyFilterSet) {
+        allow = YES;
+    }
+
+    // apply filters only if at least one filter is set
+    // Note: filters are additive. An advertisment can match *any* filter
+    if (isAnyFilterSet)
+    {
+        // filter services
+        if (!allow && [self foundService:self.scanFilters[@"with_services"] target:advServices]) {
+            allow = YES;
+        }
+
+        // filter remoteIds
+        if (!allow && [self foundRemoteId:self.scanFilters[@"with_remote_ids"] target:remoteId]) {
+            allow = YES;
+        }
+
+        // filter names
+        if (!allow && [self foundName:self.scanFilters[@"with_names"] target:advName]) {
+            allow = YES;
+        }
+
+        // filter keywords
+        if (!allow && [self foundKeyword:self.scanFilters[@"with_keywords"] target:advName]) {
+            allow = YES;
+        }
+
+        // filter msd
+        if (!allow && [self foundMsd:self.scanFilters[@"with_msd"] msd:advMsd]) {
+            allow = YES;
+        }
+
+        // filter service data
+        if (!allow && [self foundServiceData:self.scanFilters[@"with_service_data"] sd:advSd]) {
+            allow = YES;
+        }
+    }
+
+    // If no filters are satisfied, return
+    if (!allow) {
         return;
     }
 
-    // names
-    if (![self filterNames:self.scanFilters[@"with_names"] target:advName]) {
-        return;
-    }
-
-    // keywords
-    if (![self filterKeywords:self.scanFilters[@"with_keywords"] target:advName]) {
-        return;
-    }
-
-    // msd
-    if (![self filterMsd:self.scanFilters[@"with_msd"] msd:advMsd]) {
-        return;
-    }
-
-    // service data
-    if (![self filterServiceData:self.scanFilters[@"with_service_data"] sd:advSd]) {
-        return;
-    }
-
-    // increment scan count
-    NSInteger count = [self scanCountIncrement:remoteId];
-
-    // divisor
-    if (count % [self.scanFilters[@"continuous_divisor"] integerValue] != 0) {
-        return;
+    // filter divisor
+    if ([self.scanFilters[@"continuous_updates"] integerValue] != 0) {
+        NSInteger count = [self scanCountIncrement:remoteId];
+        NSInteger divisor = [self.scanFilters[@"continuous_divisor"] integerValue];
+        if ((count % divisor) != 0) {
+            return;
+        }
     }
 
     // See BmScanResponse
@@ -1144,10 +1223,10 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                       error:(NSError *)error
 {
     if (error) {
-        // error contains the reason for the unexpected disconnection
-        Log(LERROR, @"didDisconnectPeripheral: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didDisconnectPeripheral:");
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didDisconnectPeripheral");
+        Log(LDEBUG, @"didDisconnectPeripheral:");
     }
 
     NSString* remoteId = [[peripheral identifier] UUIDString];
@@ -1164,11 +1243,14 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     // Unregister self as delegate for peripheral, not working #42
     peripheral.delegate = nil;
 
+    // random number defined by flutter blue plus
+    int bmUserCanceledErrorCode = 23789258;
+
     // See BmConnectionStateResponse
     NSDictionary *result = @{
         @"remote_id":                remoteId,
         @"connection_state":         @([self bmConnectionStateEnum:peripheral.state]),
-        @"disconnect_reason_code":   error ? @(error.code) : @(23789258),
+        @"disconnect_reason_code":   error ? @(error.code) : @(bmUserCanceledErrorCode),
         @"disconnect_reason_string": error ? [error localizedDescription] : @("connection canceled"),
     };
 
@@ -1181,10 +1263,10 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                          error:(NSError *)error
 {
     if (error) {
-        // error contains the reason for the connection failure
-        Log(LERROR, @"didFailToConnectPeripheral: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didFailToConnectPeripheral:");
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didFailToConnectPeripheral");
+        Log(LDEBUG, @"didFailToConnectPeripheral:");
     }
 
     NSString* remoteId = [[peripheral identifier] UUIDString];
@@ -1221,9 +1303,10 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     didDiscoverServices:(NSError *)error
 {
     if (error) {
-        Log(LERROR, @"didDiscoverServices: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didDiscoverServices:");
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didDiscoverServices");
+        Log(LDEBUG, @"didDiscoverServices:");
     }
 
     // discover characteristics and secondary services
@@ -1231,7 +1314,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     for (CBService *s in [peripheral services]) {
         Log(LDEBUG, @"  svc: %@", [s.UUID uuidStr]);
         [peripheral discoverCharacteristics:nil forService:s];
-        // Secondary services in the future (#8)
+        // todo: included services
         // [peripheral discoverIncludedServices:nil forService:s];
     }
 }
@@ -1241,9 +1324,11 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                                    error:(NSError *)error
 {
     if (error) {
-        Log(LERROR, @"didDiscoverCharacteristicsForService: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didDiscoverCharacteristicsForService:");
+        Log(LERROR, @"  svc: %@", [service.UUID uuidStr]);
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didDiscoverCharacteristicsForService");
+        Log(LDEBUG, @"didDiscoverCharacteristicsForService:");
         Log(LDEBUG, @"  svc: %@", [service.UUID uuidStr]);
     }
 
@@ -1262,9 +1347,11 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                                       error:(NSError *)error
 {
     if (error) {
-        Log(LERROR, @"didDiscoverDescriptorsForCharacteristic: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didDiscoverDescriptorsForCharacteristic:");
+        Log(LERROR, @"  chr: %@", [characteristic.UUID uuidStr]);
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didDiscoverDescriptorsForCharacteristic");
+        Log(LDEBUG, @"didDiscoverDescriptorsForCharacteristic:");
         Log(LDEBUG, @"  chr: %@", [characteristic.UUID uuidStr]);
     }
 
@@ -1306,9 +1393,12 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                                     error:(NSError *)error
 {
     if (error) {
-        Log(LERROR, @"didDiscoverIncludedServicesForService: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didDiscoverIncludedServicesForService:");
+        Log(LERROR, @"  svc: %@", [service.UUID uuidStr]);
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didDiscoverIncludedServicesForService");
+        Log(LDEBUG, @"didDiscoverIncludedServicesForService:");
+        Log(LDEBUG, @"  svc: %@", [service.UUID uuidStr]);
     }
 
     // Loop through and discover characteristics for secondary services
@@ -1413,12 +1503,75 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic
                               error:(NSError *)error
 {
-    // this callback is called for notifications as well as manual reads
+    // this function is called on notifications as well as manual reads
     if (error) {
-        Log(LERROR, @"didUpdateValueForCharacteristic: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didUpdateValueForCharacteristic:");
+        Log(LERROR, @"  chr: %@", [characteristic.UUID uuidStr]);
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didUpdateValueForCharacteristic: %@", [characteristic.UUID uuidStr]);
+        Log(LDEBUG, @"didUpdateValueForCharacteristic:");
+        Log(LDEBUG, @"  chr: %@", [characteristic.UUID uuidStr]);
     }
+
+    NSData* data = characteristic.value;
+
+    //parse bytes
+      NSArray* messages = [self parse:data];
+      if (messages){
+          //NSLog(@"SNTX didUpdateValueForCharacteristic uuid: %@", [characteristic.UUID fullUUIDString]);
+          //Direct midi messages management
+          for (NSData* data in messages){
+              const char *m = [data bytes];
+              unsigned char status = m[0];
+              unsigned char ch = m[1];
+              unsigned char d1 = m[2];
+              unsigned char d2 = m[3];
+              
+              //NSLog(@"SNTX value:[status:%02x ch:%02x d1:%02x d2:%02x]", status, ch, d1, d2);
+
+              if(status == 0x90 /*NoteON*/ || status == 0x80 /*NoteOFF*/ ||
+                  (status >= 0xb0 /*CC*/ && status < 0xc0 /*PrgChg*/ && (d1 != 52 && d1 != 53) /*filtering accelerometer y an z*/ ) ||
+                 (status >= 0xc0 /*PrgChg*/ && status < 0xd0 /*ChPressure*/) ||
+                 (status >= 0xd0 /*ChPressure*/ && status < 0xe0 /*Bender*/)
+                 ){
+                  //NSLog(@"SNTX forwarding MidiMessage to Synth! status=%02x uuid=%@",status ,peripheral.identifier);
+                  switch(status){
+                  case 0x90:
+                          [_midiSynth noteOnWithMacWithSynthIdx:0 channel:ch note:d1+_transpose velocity:d2 mac:[peripheral.identifier UUIDString]];
+                      break;
+                  case 0x80:
+                          [_midiSynth noteOffWithMacWithSynthIdx:0 channel:ch note:d1+_transpose velocity:d2 mac:[peripheral.identifier UUIDString]];
+                      break;
+                  case 0xC0:
+                      if([_midiSynth hasClassRoom]){
+                          NSLog(@"CLASSROOM MODE -- PROGRAM CHANGE FILTERED !!! - ch=%d status=%d d1=%d d2=%d", ch, status, d1, d2);
+                      } else {
+                          NSLog(@"PROGRAM CHANGE - ch=%d status=%d d1=%d d2=%d", ch, status, d1, d2);
+                          //[_midiSynth initSynthWithInstrument:d1];
+                          [_midiSynth setInstrumentWithSynthIdx:0 idx:d1 channel:ch mac:[peripheral.identifier UUIDString]];
+                      }
+                      break;
+                  default:
+                  /*
+                      if(status == 0xD0){ //aftertouch
+                        //print ("remapping aftertouch message ${msg.status} ${msg.d1} to Expression CC 0xB0 11 {msg.d1}" );
+                        status = 0xB0;
+                        int c = 60;
+                        //d1=0x7f; //test
+                        double v = c + ((127.0f-c)*d1)/127.0f;
+                        //NSLog (@"xpression c=%d d1=%d => v=%lf (int)v=%d",c,d1,v,(int)v);
+                        d2 = (int)v;
+                        d1 = 11; //Expression CC
+                      }
+                   */
+                          
+                          [_midiSynth midiEventWithMacWithSynthIdx:0 command:(ch | status) d1:d1 d2:d2 mac:[peripheral.identifier UUIDString]];
+                      break;
+                }
+            }
+        }
+    }
+    //NORMAL flutter_blue management (SYSEX):
 
     NSData* data = characteristic.value;
 
@@ -1501,12 +1654,14 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     didWriteValueForCharacteristic:(CBCharacteristic *)characteristic
                              error:(NSError *)error
 {
-    // Note:
-    //  - this callback is only called for writeWithResponse
+    // Note: this callback is only called for writeWithResponse
     if (error) {
-        Log(LERROR, @"didWriteValueForCharacteristic: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didWriteValueForCharacteristic:");
+        Log(LERROR, @"  chr: %@", [characteristic.UUID uuidStr]);
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didWriteValueForCharacteristic: %@", [characteristic.UUID uuidStr]);
+        Log(LDEBUG, @"didWriteValueForCharacteristic:");
+        Log(LDEBUG, @"  chr: %@", [characteristic.UUID uuidStr]);
     }
 
     ServicePair *pair = [self getServicePair:peripheral characteristic:characteristic];
@@ -1542,9 +1697,12 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                                           error:(NSError *)error
 {
     if (error) {
-        Log(LERROR, @"didUpdateNotificationStateForCharacteristic: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didUpdateNotificationStateForCharacteristic:");
+        Log(LERROR, @"  chr: %@", [characteristic.UUID uuidStr]);
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didUpdateNotificationStateForCharacteristic: %@", [characteristic.UUID uuidStr]);
+        Log(LDEBUG, @"didUpdateNotificationStateForCharacteristic:");
+        Log(LDEBUG, @"  chr: %@", [characteristic.UUID uuidStr]);
     }
 
     ServicePair *pair = [self getServicePair:peripheral characteristic:characteristic];
@@ -1583,9 +1741,14 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                           error:(NSError *)error
 {
     if (error) {
-        Log(LERROR, @"didUpdateValueForDescriptor: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didUpdateValueForDescriptor:");
+        Log(LERROR, @"  chr: %@", [descriptor.characteristic.UUID uuidStr]);
+        Log(LERROR, @"  desc: %@", [descriptor.UUID uuidStr]);
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didUpdateValueForDescriptor: %@", [descriptor.UUID uuidStr]);
+        Log(LDEBUG, @"didUpdateValueForDescriptor:");
+        Log(LDEBUG, @"  chr: %@", [descriptor.characteristic.UUID uuidStr]);
+        Log(LDEBUG, @"  desc: %@", [descriptor.UUID uuidStr]);
     }
 
     ServicePair *pair = [self getServicePair:peripheral characteristic:descriptor.characteristic];
@@ -1613,9 +1776,14 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                          error:(NSError *)error
 {
     if (error) {
-        Log(LERROR, @"didWriteValueForDescriptor: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didWriteValueForDescriptor:");
+        Log(LERROR, @"  chr: %@", [descriptor.characteristic.UUID uuidStr]);
+        Log(LERROR, @"  desc: %@", [descriptor.UUID uuidStr]);
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didWriteValueForDescriptor %@", [descriptor.UUID uuidStr]);
+        Log(LDEBUG, @"didWriteValueForDescriptor:");
+        Log(LDEBUG, @"  chr: %@", [descriptor.characteristic.UUID uuidStr]);
+        Log(LDEBUG, @"  desc: %@", [descriptor.UUID uuidStr]);
     }
 
     ServicePair *pair = [self getServicePair:peripheral characteristic:descriptor.characteristic];
@@ -1675,9 +1843,10 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     didReadRSSI:(NSNumber *)rssi error:(NSError *)error
 {
     if (error) {
-        Log(LERROR, @"didReadRSSI: [Error] %@", [error localizedDescription]);
+        Log(LERROR, @"didReadRSSI:");
+        Log(LERROR, @"  error: %@", [error localizedDescription]);
     } else {
-        Log(LDEBUG, @"didReadRSSI");
+        Log(LDEBUG, @"didReadRSSI: %@", rssi);
     }
 
     // See BmReadRssiResult
@@ -1784,9 +1953,10 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     NSDictionary* manufDataB = nil;
     if (manufData != nil && manufData.length >= 2) {
         
-        // first 2 bytes are manufacturerId
-        unsigned short manufId = 0;
-        [manufData getBytes:&manufId length:2];
+        // first 2 bytes are manufacturerId (little endian)
+        uint8_t bytes[2];
+        [manufData getBytes:bytes length:2];
+        unsigned short manufId = (unsigned short) (bytes[0] | bytes[1] << 8);
 
         // trim off first 2 bytes
         NSData* trimmed = [manufData subdataWithRange:NSMakeRange(2, manufData.length - 2)];
@@ -1956,12 +2126,28 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     return count;
 }
 
-- (BOOL)filterKeywords:(NSArray<NSString *> *)keywords
+- (BOOL)hasFilter:(NSString *)key {
+    NSArray *filterArray = self.scanFilters[key];
+    return (filterArray != nil && [filterArray count] > 0);
+}
+
+- (BOOL)foundService:(NSArray<NSString *> *)services
+                target:(NSArray<CBUUID *> *)target
+{
+    if (target == nil || target.count == 0) {
+        return NO;
+    }
+    for (CBUUID *s in target) {
+        if ([services containsObject:[s uuidStr]]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (BOOL)foundKeyword:(NSArray<NSString *> *)keywords
                 target:(NSString *)target
 {
-    if (keywords.count == 0) {
-        return YES;
-    }
     if (target == nil) {
         return NO;
     }
@@ -1973,12 +2159,9 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     return NO;
 }
 
-- (BOOL)filterNames:(NSArray<NSString *> *)names
+- (BOOL)foundName:(NSArray<NSString *> *)names
                 target:(NSString *)target
 {
-    if (names.count == 0) {
-        return YES;
-    }
     if (target == nil) {
         return NO;
     }
@@ -1990,12 +2173,9 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     return NO;
 }
 
-- (BOOL)filterRemoteIds:(NSArray<NSString *> *)remoteIds
+- (BOOL)foundRemoteId:(NSArray<NSString *> *)remoteIds
                 target:(NSString *)target
 {
-    if (remoteIds.count == 0) {
-        return YES;
-    }
     if (target == nil) {
         return NO;
     }
@@ -2007,12 +2187,9 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     return NO;
 }
 
-- (BOOL)filterServiceData:(NSArray<NSDictionary*>*)filters
+- (BOOL)foundServiceData:(NSArray<NSDictionary*>*)filters
                        sd:(NSDictionary *)sd
 {
-    if (filters.count == 0) {
-        return YES;
-    }
     if (sd == nil || sd.count == 0) {
         return NO;
     }
@@ -2040,12 +2217,9 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     return NO;
 }
 
-- (BOOL)filterMsd:(NSArray<NSDictionary*>*)filters
+- (BOOL)foundMsd:(NSArray<NSDictionary*>*)filters
               msd:(NSData *)msd
 {
-    if (filters.count == 0) {
-        return YES;
-    }
     if (msd == nil || msd.length == 0) {
         return NO;
     }
