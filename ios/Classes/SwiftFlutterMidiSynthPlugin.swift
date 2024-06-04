@@ -241,6 +241,7 @@ import Foundation
     
     private func getSequencer(synthIdx: Int, channel: Int) -> Sequencer{
         if (sequencers[synthIdx]?[channel] == nil){
+            print("creating sequencer for channel \(channel) synthIdx \(synthIdx)")
             var v: [Int:Sequencer] = sequencers[synthIdx] ?? [:]
             v[channel] = Sequencer(channel: channel)
             sequencers[synthIdx] = v
@@ -254,11 +255,12 @@ import Foundation
             let expression = allowedInstrumentsExpressions[pos]
             setInstrument(synthIdx: synthIdx, instrument: idx, channel: channel, bank: 0, mac: mac, expression: expression)
         } else {
-            print(" error! Instrument \(idx) not found in \(allowedInstrumentsIndexes)")
+            print(" error! Instrument \(idx) not found in allowedInstruments= \(allowedInstrumentsIndexes)")
         }
     }
     
     private func setInstrument(synthIdx: Int, instrument: Int, channel: Int = 0, bank: Int = 0, mac: String? = nil, expression: Bool? = false){
+        
         print ("setInstrument synthIdx=\(synthIdx) instrument=\(instrument) channel=\(channel) bank=\(bank) mac=\(mac) expression=\(expression)")
         if(!allowedInstrumentsIndexes.contains(instrument) && bank == 0){
             print(" error! Instrument \(instrument) not found in \(allowedInstrumentsIndexes)")
@@ -274,7 +276,9 @@ import Foundation
 
         let infos : instrumentInfos = ( channel: channel, instrument: instrument, bank: bank, mac: mac)
         instruments[channel] = infos
+        
         synths[synthIdx]?!.loadPatch(patchNo: instrument, channel: channel, bank: bank)
+
         getSequencer(synthIdx: synthIdx, channel: channel).patch = UInt32(instrument)
         
         if(mac != nil){
@@ -295,7 +299,7 @@ import Foundation
         //if (!expression){
         //    vel = Int(xpressionsMap[channel]?.last ?? UInt32(velocity))
         //}
-        print ("noteOnWithMac synthIdx=\(synthIdx) ch=\(ch) note=\(note) velocity=\(velocity) expression=\(expression) mac=\(mac)")
+        //print ("noteOnWithMac synthIdx=\(synthIdx) ch=\(ch) note=\(note) velocity=\(velocity) expression=\(expression) mac=\(mac)")
         noteOn(synthIdx: synthIdx, channel: ch, note: note, velocity: vel)
     }
     
@@ -306,6 +310,8 @@ import Foundation
     }
     
     public func midiEventWithMac(synthIdx: Int, command: UInt32, d1: UInt32, d2: UInt32, mac: String){
+
+        var _cmd = command & 0xf0
         var _d2 = d2
         let ch = recorders[mac] ?? 0
         let expression = expressions[mac] ?? false
@@ -313,7 +319,8 @@ import Foundation
             print ("expression disabled for this instrument.")
             _d2 = 80
         }
-        midiEvent(synthIdx: synthIdx, command: command+UInt32(ch), d1: d1, d2: _d2)
+        
+        midiEvent(synthIdx: synthIdx, command: _cmd+UInt32(ch), d1: d1, d2: _d2)
     }
 
     private func wand_noteOff(synthIdx: Int, channel: Int, note: Int, velocity: Int){
@@ -424,12 +431,13 @@ import Foundation
     public func midiEvent(synthIdx: Int, command: UInt32, d1: UInt32, d2: UInt32){
         //print("SwiftFlutterMidiSyntPlugin.swift midiEvent synthIdx=\(synthIdx) command=\(command)  d1=\(d1) d2=\(d2) (RAW) ")
 
+        
         var _d1 = d1
         var _d2 = d2
         var _command = command
         var ch = Int(command & 0xf)
         let infos = specialModes[ch] //(channel : Int, mode: Int, notes:[Int], continuous: Bool , time: Int, controller: Int, muted: Bool)
-
+        
         if (infos?.mode == 1){ //WAND MODE
             //print("SwiftFlutterMidiSyntPlugin.swift midiEvent cmd \(command)  ch \(ch) d1 \(d1) d2 \(d2) infos \(infos) (RAW) ")
             //_command = (command & 0xf0) | UInt32(ch)
@@ -509,6 +517,7 @@ import Foundation
             }
 
         } else {
+
             //print("SwiftFlutterMidiSyntPlugin.swift NORMAL MODE")
             if(command & 0xf0 == 0xb0 && d1 == 11) {
                 //print("SwiftFlutterMidiSyntPlugin.swift midiEvent \(command)  \(d1) \(d2) (RAW) ")
@@ -516,6 +525,7 @@ import Foundation
                 _d2 = scaleXpression(min:25, max:110, value: _d2)
                 //_d1 = 7
             }
+ 
             synths[synthIdx]?!.midiEvent(cmd: command, d1: _d1, d2: _d2);
         }
     }
