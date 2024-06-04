@@ -1573,66 +1573,6 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     }
     //NORMAL flutter_blue management (SYSEX):
 
-    NSData* data = characteristic.value;
-
-    //parse bytes
-      NSArray* messages = [self parse:data];
-      if (messages){
-          //NSLog(@"SNTX didUpdateValueForCharacteristic uuid: %@", [characteristic.UUID fullUUIDString]);
-          //Direct midi messages management
-          for (NSData* data in messages){
-              const char *m = [data bytes];
-              unsigned char status = m[0];
-              unsigned char ch = m[1];
-              unsigned char d1 = m[2];
-              unsigned char d2 = m[3];
-              
-              //NSLog(@"SNTX value:[status:%02x ch:%02x d1:%02x d2:%02x]", status, ch, d1, d2);
-
-              if(status == 0x90 /*NoteON*/ || status == 0x80 /*NoteOFF*/ ||
-                  (status >= 0xb0 /*CC*/ && status < 0xc0 /*PrgChg*/ && (d1 != 52 && d1 != 53) /*filtering accelerometer y an z*/ ) ||
-                 (status >= 0xc0 /*PrgChg*/ && status < 0xd0 /*ChPressure*/) ||
-                 (status >= 0xd0 /*ChPressure*/ && status < 0xe0 /*Bender*/)
-                 ){
-                  //NSLog(@"SNTX forwarding MidiMessage to Synth! status=%02x uuid=%@",status ,peripheral.identifier);
-                  switch(status){
-                  case 0x90:
-                          [_midiSynth noteOnWithMacWithSynthIdx:0 channel:ch note:d1+_transpose velocity:d2 mac:[peripheral.identifier UUIDString]];
-                      break;
-                  case 0x80:
-                          [_midiSynth noteOffWithMacWithSynthIdx:0 channel:ch note:d1+_transpose velocity:d2 mac:[peripheral.identifier UUIDString]];
-                      break;
-                  case 0xC0:
-                      if([_midiSynth hasClassRoom]){
-                          NSLog(@"CLASSROOM MODE -- PROGRAM CHANGE FILTERED !!! - ch=%d status=%d d1=%d d2=%d", ch, status, d1, d2);
-                      } else {
-                          NSLog(@"PROGRAM CHANGE - ch=%d status=%d d1=%d d2=%d", ch, status, d1, d2);
-                          //[_midiSynth initSynthWithInstrument:d1];
-                          [_midiSynth setInstrumentWithSynthIdx:0 idx:d1 channel:ch mac:[peripheral.identifier UUIDString]];
-                      }
-                      break;
-                  default:
-                  /*
-                      if(status == 0xD0){ //aftertouch
-                        //print ("remapping aftertouch message ${msg.status} ${msg.d1} to Expression CC 0xB0 11 {msg.d1}" );
-                        status = 0xB0;
-                        int c = 60;
-                        //d1=0x7f; //test
-                        double v = c + ((127.0f-c)*d1)/127.0f;
-                        //NSLog (@"xpression c=%d d1=%d => v=%lf (int)v=%d",c,d1,v,(int)v);
-                        d2 = (int)v;
-                        d1 = 11; //Expression CC
-                      }
-                   */
-                          
-                          [_midiSynth midiEventWithMacWithSynthIdx:0 command:(ch | status) d1:d1 d2:d2 mac:[peripheral.identifier UUIDString]];
-                      break;
-                }
-            }
-        }
-    }
-    //NORMAL flutter_blue management (SYSEX):
-
     ServicePair *pair = [self getServicePair:peripheral characteristic:characteristic];
 
     // See BmCharacteristicData
