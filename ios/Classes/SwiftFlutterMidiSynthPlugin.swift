@@ -11,6 +11,8 @@ import Foundation
     var sequencers: [Int:[Int:Sequencer]] = [:]
     var recorders = [String : Int]() //[mac : channel]
     var expressions = [String : Bool]() //[mac : expression]
+    var transposes = [String : Int]() //[mac : transpose]
+
     typealias instrumentInfos = (channel : Int, instrument: Int , bank: Int , mac:String?)
     var instruments = [Int:instrumentInfos]() //[channel, instrumentInfos
     var xpressionsMap = [Int:[UInt32]]() //channel, expressions
@@ -54,7 +56,8 @@ import Foundation
             let bank = args?["bank"] as! Int
             let mac = args?["mac"] as! String
             let expression = args?["expression"] as! Bool
-            self.setInstrument(synthIdx: synthIdx, instrument: instrument, channel: channel, bank: bank, mac: mac, expression: expression)
+            let transpose = args?["transpose"] as! Int
+            self.setInstrument(synthIdx: synthIdx, instrument: instrument, channel: channel, bank: bank, mac: mac, expression: expression, transpose: transpose)
         case "noteOn":
             let args = call.arguments as? Dictionary<String, Any>
             let synthIdx = args?["synthIdx"] as! Int
@@ -259,7 +262,7 @@ import Foundation
         }
     }
     
-    private func setInstrument(synthIdx: Int, instrument: Int, channel: Int = 0, bank: Int = 0, mac: String? = nil, expression: Bool? = false){
+    private func setInstrument(synthIdx: Int, instrument: Int, channel: Int = 0, bank: Int = 0, mac: String? = nil, expression: Bool? = false, transpose: Int? = 0){
         
         print ("setInstrument synthIdx=\(synthIdx) instrument=\(instrument) channel=\(channel) bank=\(bank) mac=\(mac) expression=\(expression)")
         if(!allowedInstrumentsIndexes.contains(instrument) && bank == 0){
@@ -270,6 +273,7 @@ import Foundation
         if(mac != nil){
             recorders[mac!] = channel
             expressions[mac!] = expression
+            transposes[mac!] = transpose
         }
 
         let specialModeInfos = specialModes[Int(channel)]
@@ -296,17 +300,19 @@ import Foundation
         var vel = velocity
         let ch = recorders[mac] ?? channel
         let expression = expressions[mac] ?? false
+        let transpose = transposes[mac] ?? 0
         //if (!expression){
         //    vel = Int(xpressionsMap[channel]?.last ?? UInt32(velocity))
         //}
         //print ("noteOnWithMac synthIdx=\(synthIdx) ch=\(ch) note=\(note) velocity=\(velocity) expression=\(expression) mac=\(mac)")
-        noteOn(synthIdx: synthIdx, channel: ch, note: note, velocity: vel)
+        noteOn(synthIdx: synthIdx, channel: ch, note: note+transpose, velocity: vel)
     }
     
     public func noteOffWithMac(synthIdx: Int, channel: Int, note: Int, velocity: Int, mac: String){
         //print ("noteOffWithMac \(channel) \(note) \(velocity) \(mac)")
         let ch = recorders[mac] ?? channel
-        noteOff(synthIdx: synthIdx, channel: ch, note: note, velocity: velocity)
+        let transpose = transposes[mac] ?? 0
+        noteOff(synthIdx: synthIdx, channel: ch, note: note+transpose, velocity: velocity)
     }
     
     public func midiEventWithMac(synthIdx: Int, command: UInt32, d1: UInt32, d2: UInt32, mac: String){
@@ -429,7 +435,7 @@ import Foundation
     }
 
     public func midiEvent(synthIdx: Int, command: UInt32, d1: UInt32, d2: UInt32){
-        //print("SwiftFlutterMidiSyntPlugin.swift midiEvent synthIdx=\(synthIdx) command=\(command)  d1=\(d1) d2=\(d2) (RAW) ")
+        print("SwiftFlutterMidiSyntPlugin.swift midiEvent synthIdx=\(synthIdx) command=\(command)  d1=\(d1) d2=\(d2) (RAW) ")
 
         
         var _d1 = d1
@@ -447,7 +453,7 @@ import Foundation
                     let uscaled = scaleRotation(fromMin: 0, fromMax: Int(127*0.6), toMin: 0, toMax: Int(127*0.3), value: _d2)
                     _d1 = 11 //Map rotation to volume via expression
                     //_d1 = 7 //Map rotation to volume via volume
-                    //print("SwiftFlutterMidiSynthPlugin.swift Rotation: uscaled \(uscaled) d2 \(_d2) _d1 \(_d1)")
+                    print("SwiftFlutterMidiSynthPlugin.swift Rotation: uscaled \(uscaled) d2 \(_d2) _d1 \(_d1)")
                     synths[synthIdx]?!.midiEvent(cmd: _command, d1: _d1, d2: uscaled)
 
                 case 1: /*inclination*/
@@ -612,6 +618,10 @@ import Foundation
     }
     
     public func hasClassRoom() -> Bool {
+        return classroom
+    }
+
+    public func getTranspose() -> Bool {
         return classroom
     }
 }
