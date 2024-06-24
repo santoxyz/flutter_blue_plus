@@ -256,7 +256,8 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
         val time = args["time"] as Int
         val controller = args["controller"] as Int
         val muted = args["muted"] as Boolean
-        setSpecialMode(args, channel, mode, notes, continuous, time/10, controller, muted)
+        val synth = args["synth"] as Int
+        setSpecialMode(args, channel, mode, notes, continuous, time/10, controller, muted, synth)
 
         result.success(null)
       }
@@ -697,7 +698,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
     return span
   }
 
-  fun setSpecialMode(args: HashMap<String, *>, channel: Int, mode: Int, notes: MutableList<Int>, continuous: kotlin.Boolean, time: Int, controller: Int, muted: Boolean) {
+  fun setSpecialMode(args: HashMap<String, *>, channel: Int, mode: Int, notes: MutableList<Int>, continuous: kotlin.Boolean, time: Int, controller: Int, muted: Boolean, synth: Int) {
 
     val prev_mode = specialModes[channel]?.get("mode")
     val prev_continuous = specialModes[channel]?.get("continuous")

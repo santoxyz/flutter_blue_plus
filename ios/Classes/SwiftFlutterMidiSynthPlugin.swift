@@ -31,6 +31,7 @@ import Foundation
     var specialModes = [Int:specialModeInfos]() //[channel, specialModeInfos]
     var backgroundBendTaskIsRunning: Bool = false
 
+    let WAND_SYNTH_IDX = 3
     let wand_velocity = 70
     var classroom: Bool = false
 
@@ -111,7 +112,8 @@ import Foundation
             let time = args?["time"] as! UInt32
             let controller = args?["controller"] as! UInt32
             let muted = args?["muted"] as! Bool
-            self.setSpecialMode(channel:channel, mode:mode, notes:notes, continuous:continuous, time:time, controller:controller, muted:muted)
+            let synth = args?["synth"] as! Int
+            self.setSpecialMode(channel:channel, mode:mode, notes:notes, continuous:continuous, time:time, controller:controller, muted:muted, synthIdx:synth)
             
         default:
             print ("unknown method \(call.method)" )
@@ -325,8 +327,11 @@ import Foundation
             print ("expression disabled for this instrument.")
             _d2 = 80
         }
-        
-        midiEvent(synthIdx: synthIdx, command: _cmd+UInt32(ch), d1: d1, d2: _d2)
+        var _synthIdx = synthIdx
+        if (hasSpecialModeWAND(channel: UInt32(ch))){
+            _synthIdx = WAND_SYNTH_IDX;
+        }
+        midiEvent(synthIdx: _synthIdx, command: _cmd+UInt32(ch), d1: d1, d2: _d2)
     }
 
     private func wand_noteOff(synthIdx: Int, channel: Int, note: Int, velocity: Int){
@@ -345,8 +350,8 @@ import Foundation
         let _velocity = /*lastNoteOnOff == NOTE_OFF ? 0 :*/ velocity
         synths[synthIdx]?!.playNoteOn(channel: _channel, note: UInt8(note), midiVelocity: _velocity, sequencer: sequencer)
         sequencer.noteOn(note: UInt8(note))
-        //let now = (Int64)(NSDate().timeIntervalSince1970*1000)
-        //print("\(now) SwiftFlutterMidiSyntPlugin.swift noteOn \(_channel)  \(note) \(velocity) ")
+        let now = (Int64)(NSDate().timeIntervalSince1970*1000)
+        print("\(now) SwiftFlutterMidiSyntPlugin.swift noteOn \(synthIdx) \(_channel)  \(note) \(velocity) ")
     }
 
     public func noteOn(synthIdx: Int, channel: Int, note: Int, velocity: Int){
@@ -365,7 +370,7 @@ import Foundation
         sequencer.noteOn(note: UInt8(note))
 
         let now = (Int64)(NSDate().timeIntervalSince1970*1000)
-        //print("\(now) SwiftFlutterMidiSynthPlugin.swift noteOn \(_channel)  \(note) \(_velocity) ")
+        print("\(now) SwiftFlutterMidiSynthPlugin.swift noteOn \(synthIdx) \(_channel)  \(note) \(_velocity) ")
     }
     
     public func noteOff(synthIdx: Int, channel: Int, note: Int, velocity: Int){
@@ -423,7 +428,7 @@ import Foundation
                     wait = false
                 }
                 Thread.sleep(forTimeInterval: 0.000000100 * Double(Int(specialModes[ch]!.time)))
-                //print("ch \(ch) bend \(bendForChannel[ch]) target \(targetBendForChannel[ch])")
+                //print("\(synthIdx) ch \(ch) bend \(bendForChannel[ch]) target \(targetBendForChannel[ch])")
               }
             }
             if(wait){
@@ -435,7 +440,7 @@ import Foundation
     }
 
     public func midiEvent(synthIdx: Int, command: UInt32, d1: UInt32, d2: UInt32){
-        print("SwiftFlutterMidiSyntPlugin.swift midiEvent synthIdx=\(synthIdx) command=\(command)  d1=\(d1) d2=\(d2) (RAW) ")
+        print("SwiftFlutterMidiSynthPlugin.swift midiEvent synthIdx=\(synthIdx) command=\(command)  d1=\(d1) d2=\(d2) (RAW) ")
 
         
         var _d1 = d1
@@ -502,7 +507,7 @@ import Foundation
                     if(lastNoteForChannel[ch] != note){
 
                         parent?.sendMessage("WandNote", withBody: Data(bytes:&note, count:1) ) //Send current note to UI
-                        if (!(infos?.3)! && lastNoteForChannel[ch] != 0) {
+                        if (!(infos?.continuous)! && lastNoteForChannel[ch] != 0) {
                             //nothing to do
                         } else {
                             print("SwiftFlutterMidiSynthPlugin.swift note \(note) != \(lastNoteForChannel[ch]) -> ")
@@ -548,11 +553,10 @@ import Foundation
         synths[synthIdx]?!.setDelay(dryWet: dryWet)
     }
 
-    public func setSpecialMode(channel: UInt32, mode: UInt32, notes: [Int], continuous: Bool, time: UInt32, controller: UInt32, muted: Bool){
-        let synthIdx: Int = 0;
+    public func setSpecialMode(channel: UInt32, mode: UInt32, notes: [Int], continuous: Bool, time: UInt32, controller: UInt32, muted: Bool, synthIdx: Int){
         let infos : specialModeInfos = (channel: channel, mode: mode, notes: notes, continuous: continuous, time: time, controller: controller, muted: muted)
-        let prev_mode = specialModes[Int(channel)]?.1 //mode
-        let prev_continuous = specialModes[Int(channel)]?.3 //continuous
+        let prev_mode = specialModes[Int(channel)]?.mode //mode
+        let prev_continuous = specialModes[Int(channel)]?.continuous //continuous
 
         if(prev_mode != mode || !continuous){
             lastNoteForChannel[Int(channel)] = 0;
@@ -576,7 +580,7 @@ import Foundation
             
             let span = notes.max()! - notes.min()! //semitones span, notes includes upper octave rootnote
             let pps = 16384/span
-            print("setSpecialMode mode \(mode) on channel \(channel) - notes \(notes) span \(span) (\(pps) points/semitone) continuous \(continuous) time \(time) controller \(controller) muted \(muted)")
+            print("setSpecialMode synthIdx \(synthIdx) mode \(mode) on channel \(channel) - notes \(notes) span \(span) (\(pps) points/semitone) continuous \(continuous) time \(time) controller \(controller) muted \(muted)")
 
             synths[synthIdx]?!.midiEvent(cmd: 0xB0 | channel, d1: 7, d2: 0) //tolgo volume
 
@@ -614,7 +618,7 @@ import Foundation
     
     public func hasSpecialModeWAND(channel: UInt32) -> Bool {
         let infos = specialModes[Int(channel)]
-        return infos?.1 == 1
+        return infos?.mode == 1
     }
     
     public func hasClassRoom() -> Bool {

@@ -2,6 +2,8 @@ part of flutter_blue_plus;
 
 class FlutterMidiSynthPlugin {
   static const DEFAULT_SYNTH = 0;
+  static const WAND_SYNTH = 3;
+
   //static const MethodChannel _channel = const MethodChannel('FlutterMidiSynthPlugin');
   static const MethodChannel _channel = const MethodChannel('flutter_blue_plus/methods');
 
@@ -83,9 +85,9 @@ class FlutterMidiSynthPlugin {
     return res;
   }
 
-  static void setSpecialMode(int channel, int mode, List notes, bool continuous, int time, int controller, bool muted) async {
+  static void setSpecialMode(int channel, int mode, List notes, bool continuous, int time, int controller, bool muted, {int synth=0}) async {
     await _channel.invokeMethod("setSpecialMode",
-      {"channel": channel, "mode":mode, "notes":notes, "continuous":continuous, "time":time, "controller": controller, "muted": muted});
+      {"channel": channel, "mode":mode, "notes":notes, "continuous":continuous, "time":time, "controller": controller, "muted": muted, "synth":synth});
     return;
   }
 
