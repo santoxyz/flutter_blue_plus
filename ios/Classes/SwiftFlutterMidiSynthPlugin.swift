@@ -413,36 +413,39 @@ import Foundation
     private func backgroundBendTask(synthIdx: Int) {
         print ("starting backgroundBendTask()")
         var wait = true
-        let queue = DispatchQueue(label: "backgroundBendTaskQueue")
         while(backgroundBendTaskIsRunning){
-            queue.sync {
-                for ch in 0...bendForChannel.count-1 {
-                    if ch < targetBendForChannel.count {
-                        if (bendForChannel[ch] != targetBendForChannel[ch]){
-                            lock.lock()
-                            if(Int(specialModes[ch]!.time) == 0 || bendForChannel[ch] == 0){
-                                bendForChannel[ch] = targetBendForChannel[ch]
-                            }
-                            let pb_d1 = UInt32(bendForChannel[ch]) & 0x7f
-                            let pb_d2 = (UInt32(bendForChannel[ch]) >> 7) & 0x7f
-                            synths[synthIdx]?!.midiEvent(cmd: 0xE0 | UInt32(ch), d1: UInt32(pb_d1), d2: UInt32(pb_d2))
-                            if(bendForChannel[ch] < targetBendForChannel[ch]){
-                                bendForChannel[ch] = bendForChannel[ch] + 1
-                                wait = false
-                            } else if (bendForChannel[ch] > targetBendForChannel[ch]) {
-                                bendForChannel[ch] = bendForChannel[ch] - 1
-                                wait = false
-                            }
-                            lock.unlock()
-                            Thread.sleep(forTimeInterval: 0.000000100 * Double(Int(specialModes[ch]!.time)))
-                            //print("\(synthIdx) ch \(ch) bend \(bendForChannel[ch]) target \(targetBendForChannel[ch])")
+            lock.lock()
+            let bendSnapshot = bendForChannel
+            let targetBendSnapshot = targetBendForChannel
+            lock.unlock()
+            
+            for ch in 0...bendForChannel.count-1 {
+                if ch < targetBendForChannel.count {
+                    if (bendSnapshot[ch] != targetBendSnapshot[ch]){
+                        lock.lock()
+                        if(Int(specialModes[ch]!.time) == 0 || bendForChannel[ch] == 0){
+                            bendForChannel[ch] = targetBendSnapshot[ch]
                         }
+                        let pb_d1 = UInt32(bendForChannel[ch]) & 0x7f
+                        let pb_d2 = (UInt32(bendForChannel[ch]) >> 7) & 0x7f
+                        synths[synthIdx]?!.midiEvent(cmd: 0xE0 | UInt32(ch), d1: UInt32(pb_d1), d2: UInt32(pb_d2))
+                        if(bendForChannel[ch] < targetBendForChannel[ch]){
+                            bendForChannel[ch] = bendForChannel[ch] + 1
+                            wait = false
+                        } else if (bendForChannel[ch] > targetBendForChannel[ch]) {
+                            bendForChannel[ch] = bendForChannel[ch] - 1
+                            wait = false
+                        }
+                        lock.unlock()
+                        Thread.sleep(forTimeInterval: 0.000000100 * Double(Int(specialModes[ch]!.time)))
+                        //print("\(synthIdx) ch \(ch) bend \(bendForChannel[ch]) target \(targetBendForChannel[ch])")
                     }
                 }
-                if(wait){
-                    Thread.sleep(forTimeInterval: 0.001000000)
-                }
             }
+            if(wait){
+                Thread.sleep(forTimeInterval: 0.001000000)
+            }
+            
         }
         
         print("backgroundBendTask stopped.");
