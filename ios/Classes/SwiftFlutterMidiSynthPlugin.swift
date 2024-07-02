@@ -34,6 +34,8 @@ import Foundation
     let WAND_SYNTH_IDX = 3
     let wand_velocity = 70
     var classroom: Bool = false
+    
+    private let lock = NSLock()
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "FlutterMidiSynthPlugin", binaryMessenger: registrar.messenger())
@@ -417,6 +419,7 @@ import Foundation
                 for ch in 0...bendForChannel.count-1 {
                     if ch < targetBendForChannel.count {
                         if (bendForChannel[ch] != targetBendForChannel[ch]){
+                            lock.lock()
                             if(Int(specialModes[ch]!.time) == 0 || bendForChannel[ch] == 0){
                                 bendForChannel[ch] = targetBendForChannel[ch]
                             }
@@ -430,6 +433,7 @@ import Foundation
                                 bendForChannel[ch] = bendForChannel[ch] - 1
                                 wait = false
                             }
+                            lock.unlock()
                             Thread.sleep(forTimeInterval: 0.000000100 * Double(Int(specialModes[ch]!.time)))
                             //print("\(synthIdx) ch \(ch) bend \(bendForChannel[ch]) target \(targetBendForChannel[ch])")
                         }
@@ -501,7 +505,9 @@ import Foundation
                     if (bend <= 0) {bend = 0}
 
                     if #available(iOS 13.0.0, *) {
+                        lock.lock()
                         targetBendForChannel[ch] = bend
+                        lock.unlock()
                     } else {
                         let pb_d1 = UInt32(bend) & 0x7f
                         let pb_d2 = (UInt32(bend) >> 7) & 0x7f
