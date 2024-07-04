@@ -34,7 +34,8 @@ import Foundation
     let WAND_SYNTH_IDX = 3
     let wand_velocity = 70
     var classroom: Bool = false
-    
+
+    var synthIdxChannelForMacMap: [String:(Int,Int)] = [:]; //mac <-> synth+ch
     private let lock = NSLock()
 
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -60,6 +61,7 @@ import Foundation
             let mac = args?["mac"] as! String
             let expression = args?["expression"] as! Bool
             let transpose = args?["transpose"] as! Int
+            synthIdxChannelForMacMap[mac] = (synthIdx, channel)
             self.setInstrument(synthIdx: synthIdx, instrument: instrument, channel: channel, bank: bank, mac: mac, expression: expression, transpose: transpose)
         case "noteOn":
             let args = call.arguments as? Dictionary<String, Any>
@@ -278,6 +280,7 @@ import Foundation
             recorders[mac!] = channel
             expressions[mac!] = expression
             transposes[mac!] = transpose
+
         }
 
         let specialModeInfos = specialModes[Int(channel)]
@@ -550,7 +553,10 @@ import Foundation
                 _d2 = scaleXpression(min:25, max:110, value: _d2)
                 //_d1 = 7
             }
- 
+            if (command & 0xf0 == 0x90 || command & 0xf0 == 0x80){
+                let mac = synthIdxChannelForMacMap.first { $0.value == (synthIdx, ch) }?.key
+                _d1 = UInt32(Int(d1) + transposes[mac!]!)
+            }
             synths[synthIdx]?!.midiEvent(cmd: command, d1: _d1, d2: _d2);
         }
     }
@@ -639,7 +645,7 @@ import Foundation
         return classroom
     }
 
-    public func getTranspose() -> Bool {
-        return classroom
+    public func getTranspose(mac: String) -> Int {
+        return transposes[mac] ?? 0;
     }
 }
