@@ -333,9 +333,7 @@ import Foundation
             _d2 = 80
         }
         var _synthIdx = synthIdx
-        if (hasSpecialModeWAND(channel: UInt32(ch))){
-            _synthIdx = WAND_SYNTH_IDX;
-        }
+
         midiEvent(synthIdx: _synthIdx, command: _cmd+UInt32(ch), d1: d1, d2: _d2)
     }
 
@@ -456,15 +454,17 @@ import Foundation
 
     public func midiEvent(synthIdx: Int, command: UInt32, d1: UInt32, d2: UInt32){
         print("SwiftFlutterMidiSynthPlugin.swift midiEvent synthIdx=\(synthIdx) command=\(command)  d1=\(d1) d2=\(d2) (RAW) ")
-
-        
+        var _synthIdx = synthIdx
         var _d1 = d1
         var _d2 = d2
         var _command = command
         var ch = Int(command & 0xf)
         let infos = specialModes[ch] //(channel : Int, mode: Int, notes:[Int], continuous: Bool , time: Int, controller: Int, muted: Bool)
         
+        
+        
         if (infos?.mode == 1){ //WAND MODE
+            _synthIdx = WAND_SYNTH_IDX;
             //print("SwiftFlutterMidiSyntPlugin.swift midiEvent cmd \(command)  ch \(ch) d1 \(d1) d2 \(d2) infos \(infos) (RAW) ")
             //_command = (command & 0xf0) | UInt32(ch)
             if(_command & 0xf0 == 0xb0){
@@ -474,7 +474,7 @@ import Foundation
                     _d1 = 11 //Map rotation to volume via expression
                     //_d1 = 7 //Map rotation to volume via volume
                     print("SwiftFlutterMidiSynthPlugin.swift Rotation: uscaled \(uscaled) d2 \(_d2) _d1 \(_d1)")
-                    synths[synthIdx]?!.midiEvent(cmd: _command, d1: _d1, d2: uscaled)
+                    synths[_synthIdx]?!.midiEvent(cmd: _command, d1: _d1, d2: uscaled)
 
                 case 1: /*inclination*/
                     let notes = infos?.notes ?? []
@@ -517,7 +517,7 @@ import Foundation
                     } else {
                         let pb_d1 = UInt32(bend) & 0x7f
                         let pb_d2 = (UInt32(bend) >> 7) & 0x7f
-                        synths[synthIdx]?!.midiEvent(cmd: 0xE0 | UInt32(ch), d1: UInt32(pb_d1), d2: UInt32(pb_d2))
+                        synths[_synthIdx]?!.midiEvent(cmd: 0xE0 | UInt32(ch), d1: UInt32(pb_d1), d2: UInt32(pb_d2))
                     }
                     //print("SwiftFlutterMidiSynthPlugin.swift pb_d1 \(pb_d1) pb_d2 \(pb_d2)")
 
@@ -530,8 +530,8 @@ import Foundation
                             print("SwiftFlutterMidiSynthPlugin.swift note \(note) != \(lastNoteForChannel[ch]) -> ")
                             lastNoteForChannel[ch] = UInt32( (max_note + min_note) / 2)
                             print("SwiftFlutterMidiSynthPlugin.swift    -> sending new noteON for \(lastNoteForChannel[ch])")
-                            wand_noteOff(synthIdx: synthIdx, channel:ch, note:0, velocity:0)
-                            wand_noteOn(synthIdx: synthIdx, channel:ch, note:Int(lastNoteForChannel[ch]), velocity:wand_velocity)
+                            wand_noteOff(synthIdx: _synthIdx, channel:ch, note:0, velocity:0)
+                            wand_noteOn(synthIdx: _synthIdx, channel:ch, note:Int(lastNoteForChannel[ch]), velocity:wand_velocity)
                         }
                     }
                 case 5: //Portamento Time
@@ -554,10 +554,10 @@ import Foundation
                 //_d1 = 7
             }
             if (command & 0xf0 == 0x90 || command & 0xf0 == 0x80){
-                let mac = synthIdxChannelForMacMap.first { $0.value == (synthIdx, ch) }?.key
+                let mac = synthIdxChannelForMacMap.first { $0.value == (_synthIdx, ch) }?.key
                 _d1 = UInt32(Int(d1) + transposes[mac!]!)
             }
-            synths[synthIdx]?!.midiEvent(cmd: command, d1: _d1, d2: _d2);
+            synths[_synthIdx]?!.midiEvent(cmd: command, d1: _d1, d2: _d2);
         }
     }
     
