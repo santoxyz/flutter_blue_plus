@@ -22,6 +22,7 @@ import Foundation
     var allowedInstrumentsIndexes: [Int] = []
     var allowedInstrumentsExpressions: [Bool] = []
 
+    var lastInclinationForChannel: [UInt32] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     var lastNoteForChannel: [UInt32] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     var movingWindowForChannel: [[Int]] = [[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]]
     let movingWindowDepth = 1
@@ -453,7 +454,7 @@ import Foundation
     }
 
     public func midiEvent(synthIdx: Int, command: UInt32, d1: UInt32, d2: UInt32){
-        print("SwiftFlutterMidiSynthPlugin.swift midiEvent synthIdx=\(synthIdx) command=\(command)  d1=\(d1) d2=\(d2) (RAW) ")
+        //print("SwiftFlutterMidiSynthPlugin.swift midiEvent synthIdx=\(synthIdx) command=\(command)  d1=\(d1) d2=\(d2) (RAW) ")
         var _synthIdx = synthIdx
         var _d1 = d1
         var _d2 = d2
@@ -470,10 +471,27 @@ import Foundation
             if(_command & 0xf0 == 0xb0){
                 switch d1 {
                 case 52: /*rotation*/
-                    let uscaled = scaleRotation(fromMin: 0, fromMax: Int(127*0.6), toMin: 0, toMax: Int(127*0.3), value: _d2)
+                    let max = Int(127*0.3)
+                    var uscaled = scaleRotation(fromMin: 0, fromMax: Int(127*0.6), toMin: 0, toMax: max, value: _d2)
+                    if(lastInclinationForChannel[ch] < 12){
+                        let delta = Double(lastInclinationForChannel[ch]) / 12.0
+                        var double_uscaled = Double(uscaled) * delta
+                        if(double_uscaled < 0){
+                            double_uscaled = 0
+                        }
+                        uscaled = UInt32(double_uscaled)
+                    }
+                    if(lastInclinationForChannel[ch] > 98){
+                        let delta = (115.0 - Double(lastInclinationForChannel[ch])) / (115.0 - 98.0)
+                        var double_uscaled = Double(uscaled) * delta
+                        if(double_uscaled < 0){
+                            double_uscaled = 0
+                        }
+                        uscaled = UInt32(double_uscaled)
+                    }
                     _d1 = 11 //Map rotation to volume via expression
                     //_d1 = 7 //Map rotation to volume via volume
-                    print("SwiftFlutterMidiSynthPlugin.swift Rotation: uscaled \(uscaled) d2 \(_d2) _d1 \(_d1)")
+                    print("SwiftFlutterMidiSynthPlugin.swift    Rotation: uscaled \(uscaled) d2 \(_d2) _d1 \(_d1) incl \(lastInclinationForChannel[ch])")
                     synths[_synthIdx]?!.midiEvent(cmd: _command, d1: _d1, d2: uscaled)
 
                 case 1: /*inclination*/
@@ -489,7 +507,8 @@ import Foundation
                     var bend = 0
                     if ((infos?.continuous)!) { //continuous
                         //Pitch bend
-                        scaled = scaleInclination(fromMin: 0, fromMax: 115, toMin: 0, toMax: 127, value: d2)
+                        //scaled = scaleInclination(fromMin: 0, fromMax: 115, toMin: 0, toMax: 127, value: d2)
+                        scaled = scaleInclination(fromMin: 12, fromMax: 98, toMin: 0, toMax: 127, value: d2) //shrinked to preserve rotation-manages-volume functionality
                         let uscaled = UInt32(scaled)
                         note = Int((max_note + min_note) / 2)
                         bend = Int(uscaled*0x4000/127)
@@ -498,13 +517,16 @@ import Foundation
                     } else {
                         // Se è !continuous devo calcolare la distanza dalle note più vicine
                         // e raggiungere il target con un bend manuale
-                        scaled = scaleInclination(fromMin: 0, fromMax: 115, toMin: min_note, toMax: max_note, value: d2)
+                        //scaled = scaleInclination(fromMin: 0, fromMax: 115, toMin: min_note, toMax: max_note, value: d2)
+                        scaled = scaleInclination(fromMin: 14, fromMax: 96, toMin: min_note, toMax: max_note, value: d2) //shrinked to preserve rotation-manages-volume functionality
+                        lastInclinationForChannel[ch] = UInt32(d2);
                         note = Int(selectNote(d2:UInt32(scaled), ch:UInt32(ch), notes:notes))
                         let distance = note - Int(lastNoteForChannel[ch])
                         let span = max_note - min_note //semitones span, including upper octave rootnote
                         let pps = 16384.0/Double(span)
                         bend = Int(Double(distance)*pps) + 8192
                         //print("SwiftFlutterMidiSynthPlugin.swift Quantized mode: note \(note) (\(noteToString(note:UInt32(note))) centralNote[\(ch)] \(lastNoteForChannel[ch]) distance \(distance) pps \(pps) => bend \(bend) (d=\(bend-8196))")
+                        print("SwiftFlutterMidiSynthPlugin.swift Inclination: uscaled \(scaled) d2 \(d2) d1 \(_d1)")
                     }
 
                     if (bend >= 16384) {bend = 16384-1}
