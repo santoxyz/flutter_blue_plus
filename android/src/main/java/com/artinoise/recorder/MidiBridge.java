@@ -174,6 +174,13 @@ public class MidiBridge {
         return -1;
     }
 
+    public int MIDISetCurrentTick(double p) {
+        if (isFluidsynthEngine()) {
+            return ((FluidSynthDriver)engine).MIDIGSetCurrentTick(p);
+        }
+        return -1;
+    }
+
     public double MIDIGetCurrentTick() {
         if (isFluidsynthEngine()) {
             return ((FluidSynthDriver)engine).MIDIGetCurrentTick();

@@ -297,6 +297,15 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
         val r = midiBridge.MIDIGetCurrentTick();
         result.success(r.toString());
       }
+      "MIDISetCurrentTick" -> {
+        //println("FlutterMidiSynthplugin: MIDIGetCurrentTick");
+        val p = call.argument<Double>("position")
+        val r1 = midiBridge.MIDISetCurrentTick(p!!);
+        result.success(r1.toString());
+
+        //val r = midiBridge.MIDIGetCurrentTick();
+        //result.success(r.toString());
+      }
       "MIDISetVolume" -> {
         println("FlutterMidiSynthplugin: MIDISetVolume");
         val vol = call.argument<Double>("volume")

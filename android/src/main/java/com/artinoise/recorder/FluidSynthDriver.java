@@ -45,6 +45,8 @@ public class FluidSynthDriver extends DriverBase
     public native int MIDIStop();
     public native int MIDIGetTotalTicks();
     public native double MIDIGetCurrentTick();
+    public native int MIDISetCurrentTick(double p);
+
     public native int MIDIGetBpm();
     public native int MIDIGetTempo();
     public native int MIDIGetStatus();

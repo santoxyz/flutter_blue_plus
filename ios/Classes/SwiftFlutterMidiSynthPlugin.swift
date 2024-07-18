@@ -28,6 +28,8 @@ import Foundation
     let movingWindowDepth = 1
     var bendForChannel: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     var targetBendForChannel: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    var masterVolumeForChannel: [UInt32] = [127,127,127,127,127,127,127,127,127,127,127,127,127,127,127,127];
+
     typealias specialModeInfos = (channel : UInt32, mode: UInt32, notes:[Int], continuous: Bool , time: UInt32, controller: UInt32, muted: Bool)
     var specialModes = [Int:specialModeInfos]() //[channel, specialModeInfos]
     var backgroundBendTaskIsRunning: Bool = false
@@ -461,9 +463,7 @@ import Foundation
         var _command = command
         var ch = Int(command & 0xf)
         let infos = specialModes[ch] //(channel : Int, mode: Int, notes:[Int], continuous: Bool , time: Int, controller: Int, muted: Bool)
-        
-        
-        
+
         if (infos?.mode == 1){ //WAND MODE
             _synthIdx = WAND_SYNTH_IDX;
             //print("SwiftFlutterMidiSyntPlugin.swift midiEvent cmd \(command)  ch \(ch) d1 \(d1) d2 \(d2) infos \(infos) (RAW) ")
@@ -491,8 +491,9 @@ import Foundation
                     }
                     _d1 = 11 //Map rotation to volume via expression
                     //_d1 = 7 //Map rotation to volume via volume
+                    let finalVolume = UInt32(Double(masterVolumeForChannel[ch]*uscaled)/127)
                     print("SwiftFlutterMidiSynthPlugin.swift    Rotation: uscaled \(uscaled) d2 \(_d2) _d1 \(_d1) incl \(lastInclinationForChannel[ch])")
-                    synths[_synthIdx]?!.midiEvent(cmd: _command, d1: _d1, d2: uscaled)
+                    synths[_synthIdx]?!.midiEvent(cmd: _command, d1: _d1, d2: finalVolume)
 
                 case 1: /*inclination*/
                     let notes = infos?.notes ?? []
@@ -560,6 +561,8 @@ import Foundation
                     //synth!.midiEvent(cmd: _command, d1: _d1, d2: _d2)
                     specialModes[ch]?.time = _d2
 
+                case 7: //Volume
+                    masterVolumeForChannel[ch] = _d2;
 
                 default:
                     break

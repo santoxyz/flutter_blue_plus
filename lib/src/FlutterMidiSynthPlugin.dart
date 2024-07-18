@@ -70,6 +70,10 @@ class FlutterMidiSynthPlugin {
     final String res = await _channel.invokeMethod('MIDIGetCurrentTick');
     return res;
   }
+  static Future<String> seek(double p) async {
+    final String res = await _channel.invokeMethod('MIDISetCurrentTick',{"position":p});
+    return res;
+  }
 
   static Future<String> setVolume(double v) async {
     final String res = await _channel.invokeMethod('MIDISetVolume',{"volume":v});

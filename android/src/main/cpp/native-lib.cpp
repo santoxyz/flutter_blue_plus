@@ -332,6 +332,15 @@ extern "C" JNIEXPORT jdouble JNICALL Java_com_artinoise_recorder_FluidSynthDrive
     return FLUID_FAILED;
 }
 
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDISetCurrentTick(JNIEnv* env, jobject, jdouble p) {
+    if(player){
+        int tick = p * (double) (ticksPerBeat);
+        int res = fluid_player_seek(player, tick);
+        //__android_log_print(ANDROID_LOG_INFO, TAG, "MIDIGetCurrentTick player = %p tick=%d bpm=%d position=%f status=%d.",player,tick,bpm,position,status);
+        return res;
+    }
+    return FLUID_FAILED;
+}
 extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIGetBpm(JNIEnv* env, jobject) {
     if(player){
         int res = fluid_player_get_bpm(player);
