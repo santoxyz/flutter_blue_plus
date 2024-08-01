@@ -265,6 +265,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
         __android_log_print(ANDROID_LOG_INFO, TAG, "fluid_player_add %s res=%d.",name,res);
         env->ReleaseStringUTFChars(jfilename, name);
         fluid_player_stop(player); //why it is starting by itself????
+        fluid_player_seek(player,0);
         return res;
     }
 
