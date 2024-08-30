@@ -277,7 +277,7 @@ public class FlutterBluePlusPlugin implements
                                  @NonNull Result result)
     {
         try {
-            log(LogLevel.DEBUG, "onMethodCall: " + call.method);
+            //log(LogLevel.DEBUG, "onMethodCall: " + call.method);
 
             // initialize adapter
             if (mBluetoothAdapter == null) {

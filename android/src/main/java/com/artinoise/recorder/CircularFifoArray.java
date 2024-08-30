@@ -4,10 +4,10 @@ import androidx.collection.CircularArray;
 import android.util.Log;
 
 public class CircularFifoArray   {
-    private CircularArray array;
+    private CircularArray<Integer> array;
     private int capacity;
     public CircularFifoArray(int capacity) {
-        array = new CircularArray(capacity);
+        array = new CircularArray<Integer>(capacity);
         this.capacity = capacity;
     }
 
