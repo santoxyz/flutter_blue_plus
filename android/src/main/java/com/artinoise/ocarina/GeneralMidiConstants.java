@@ -20,7 +20,7 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-package com.artinoise.recorder;
+package com.artinoise.ocarina;
 
 /**
  * General midi instrument constants

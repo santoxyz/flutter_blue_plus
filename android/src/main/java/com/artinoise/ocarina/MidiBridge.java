@@ -1,4 +1,4 @@
-package com.artinoise.recorder;
+package com.artinoise.ocarina;
 
 import android.content.Context;
 import android.util.Log;

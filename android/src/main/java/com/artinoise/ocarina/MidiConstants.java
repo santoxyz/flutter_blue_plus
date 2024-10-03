@@ -20,7 +20,7 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-package com.artinoise.recorder;
+package com.artinoise.ocarina;
 
 /**
  * Midi event type constants

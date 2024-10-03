@@ -1,7 +1,7 @@
-name: flutter_blue_plus
-description: Flutter plugin for connecting and communicationg with Bluetooth Low Energy devices, on Android, iOS, and MacOS.
-version: 1.32.4
-homepage: https://github.com/boskokg/flutter_blue_plus
+name: flutter_synth
+description: Flutter plugin implementing a native synth on Android, iOS, and MacOS.
+version: 1.0.0
+homepage: https://github.com/santoxyz/flutter_synth
 
 environment:
   sdk: ">=2.15.1 <4.0.0"
@@ -15,9 +15,9 @@ flutter:
   plugin:
     platforms:
       android:
-        package: com.lib.flutter_blue_plus
-        pluginClass: FlutterBluePlusPlugin
+        package: com.artinoise.flutter_synth
+        pluginClass: FlutterSynthPlugin
       ios:
-        pluginClass: FlutterBluePlusPlugin
+        pluginClass: FlutterSynthPlugin
       macos:
-        pluginClass: FlutterBluePlusPlugin
+        pluginClass: FlutterSynthPlugin

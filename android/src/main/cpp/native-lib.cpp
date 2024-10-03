@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <android/log.h>
 
-#define TAG "recorder"
+#define TAG "ocarina"
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,    TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,     TAG, __VA_ARGS__)
@@ -36,7 +36,7 @@ jint JNI_OnLoad(JavaVM* vm, void* reserved)
 }
 
 
-extern "C" JNIEXPORT bool JNICALL Java_com_artinoise_recorder_FluidSynthDriver_init(JNIEnv* env, jobject) {
+extern "C" JNIEXPORT bool JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_init(JNIEnv* env, jobject) {
     int res;
     __android_log_print(ANDROID_LOG_INFO, TAG, "fluid_synth init");
 
@@ -102,15 +102,15 @@ extern "C" JNIEXPORT bool JNICALL Java_com_artinoise_recorder_FluidSynthDriver_i
         res = fluid_settings_setstr (settings, "audio.oboe.performance-mode", "LowLatency");
         __android_log_print(ANDROID_LOG_INFO, TAG, "set audio.oboe.performance-mode res=%d",res);
 
-       res = fluid_settings_setnum (settings, "synth.gain", 8.0f);  //0.0 - 10.0 def: 0.2
+       res = fluid_settings_setnum (settings, "synth.gain", 4.0f);  //0.0 - 10.0 def: 0.2
         __android_log_print(ANDROID_LOG_INFO, TAG, "set synth.gain res=%d",res);
 
 
         //reverb
-        __android_log_print(ANDROID_LOG_INFO, TAG, "setting reverb.room-size 0.3 level 0.9");
-       res = fluid_settings_setnum (settings, "synth.reverb.level", 0.9f);  //0.0 - 1.0 def: 0.9
+        __android_log_print(ANDROID_LOG_INFO, TAG, "setting reverb.room-size 0.6 level 1.0");
+       res = fluid_settings_setnum (settings, "synth.reverb.level", 1.0f);  //0.0 - 1.0 def: 0.9
         __android_log_print(ANDROID_LOG_INFO, TAG, "set reverb.level res=%d",res);
-       res = fluid_settings_setnum (settings, "synth.reverb.room-size", 0.3f);  //0.0 - 1.0 def: 0.2
+       res = fluid_settings_setnum (settings, "synth.reverb.room-size", 0.6f);  //0.0 - 1.0 def: 0.2
         __android_log_print(ANDROID_LOG_INFO, TAG, "set reverb.room-size res=%d",res);
 
     }
@@ -136,7 +136,7 @@ extern "C" JNIEXPORT bool JNICALL Java_com_artinoise_recorder_FluidSynthDriver_i
     return true;
 }
 
-extern "C" JNIEXPORT jboolean JNICALL Java_com_artinoise_recorder_FluidSynthDriver_setSF2(JNIEnv* env, jobject, jstring jSoundfontPath) {
+extern "C" JNIEXPORT jboolean JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_setSF2(JNIEnv* env, jobject, jstring jSoundfontPath) {
     const char* soundfontPath = env->GetStringUTFChars(jSoundfontPath, nullptr);
     snprintf(sfPath,sizeof(sfPath),"%s",soundfontPath);
     // Load sample soundfont
@@ -146,7 +146,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_artinoise_recorder_FluidSynthDriv
     return true;
 }
 
-extern "C" JNIEXPORT bool JNICALL Java_com_artinoise_recorder_FluidSynthDriver_write(JNIEnv* env, jobject, jbyteArray array) {
+extern "C" JNIEXPORT bool JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_write(JNIEnv* env, jobject, jbyteArray array) {
     static const unsigned char MIDI_CMD_NOTE_OFF = 0x80;
     static const unsigned char MIDI_CMD_NOTE_ON = 0x90;
     static const unsigned char MIDI_CMD_NOTE_PRESSURE = 0xa0; //polyphonic key pressure
@@ -194,7 +194,7 @@ extern "C" JNIEXPORT bool JNICALL Java_com_artinoise_recorder_FluidSynthDriver_w
 }
 
 
-extern "C" JNIEXPORT void JNICALL Java_com_artinoise_recorder_FluidSynthDriver_shutdown(JNIEnv* env, jobject) {
+extern "C" JNIEXPORT void JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_shutdown(JNIEnv* env, jobject) {
     __android_log_print(ANDROID_LOG_INFO, TAG, "FluidSynthDriver shutdown");
     // Clean up
     delete_fluid_audio_driver(adriver);
@@ -202,7 +202,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_artinoise_recorder_FluidSynthDriver_s
     delete_fluid_settings(settings);
 }
 
-extern "C" JNIEXPORT void JNICALL Java_com_artinoise_recorder_FluidSynthDriver_setDefaultStreamValues(JNIEnv *env,
+extern "C" JNIEXPORT void JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_setDefaultStreamValues(JNIEnv *env,
       jclass type,
       jint _sampleRate,
       jint _framesPerBurst) {
@@ -210,7 +210,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_artinoise_recorder_FluidSynthDriver_s
     framesPerBurst = (int32_t) _framesPerBurst;
 }
 
-extern "C" JNIEXPORT void JNICALL Java_com_artinoise_recorder_FluidSynthDriver_setAudioPeriods(JNIEnv *env,
+extern "C" JNIEXPORT void JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_setAudioPeriods(JNIEnv *env,
       jclass type,
       jint _audioPeriods,
       jint _audioPeriodSize){
@@ -222,7 +222,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_artinoise_recorder_FluidSynthDriver_s
 //FLUID MEDIAPLAYER API
 ///////////////////////
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIPrepare(JNIEnv* env, jobject, jstring jfilename, jint _ticksPerBeat) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDIPrepare(JNIEnv* env, jobject, jstring jfilename, jint _ticksPerBeat) {
     const char* name = env->GetStringUTFChars(jfilename, nullptr);
     // Load file
     if (player){
@@ -273,7 +273,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIPlay(JNIEnv* env, jobject, jboolean forever) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDIPlay(JNIEnv* env, jobject, jboolean forever) {
     if(player){
         if(forever){
             fluid_player_set_loop(player, -1 /*infinitely*/);
@@ -286,7 +286,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIStop(JNIEnv* env, jobject) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDIStop(JNIEnv* env, jobject) {
     if(player){
         int res = fluid_player_stop(player);
         int seekres = fluid_player_seek(player,0);
@@ -296,7 +296,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIPause(JNIEnv* env, jobject) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDIPause(JNIEnv* env, jobject) {
     if(player){
         int res =  fluid_player_stop(player);
         __android_log_print(ANDROID_LOG_INFO, TAG, "MIDIPause player = %p. res=%d",player,res);
@@ -305,7 +305,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIResume(JNIEnv* env, jobject) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDIResume(JNIEnv* env, jobject) {
     if(player){
         int res = fluid_player_play(player);
         __android_log_print(ANDROID_LOG_INFO, TAG, "MIDIResume player = %p. res=%d",player,res);
@@ -314,7 +314,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIGetTotalTicks(JNIEnv* env, jobject) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDIGetTotalTicks(JNIEnv* env, jobject) {
     if(player){
         int res = fluid_player_get_total_ticks(player);
         __android_log_print(ANDROID_LOG_INFO, TAG, "MIDIGetTotalTicks player = %p. res=%d",player,res);
@@ -323,7 +323,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jdouble JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIGetCurrentTick(JNIEnv* env, jobject) {
+extern "C" JNIEXPORT jdouble JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDIGetCurrentTick(JNIEnv* env, jobject) {
     if(player){
         int tick = fluid_player_get_current_tick(player);
         int bpm = fluid_player_get_bpm(player);
@@ -336,7 +336,7 @@ extern "C" JNIEXPORT jdouble JNICALL Java_com_artinoise_recorder_FluidSynthDrive
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIGetBpm(JNIEnv* env, jobject) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDIGetBpm(JNIEnv* env, jobject) {
     if(player){
         int res = fluid_player_get_bpm(player);
         __android_log_print(ANDROID_LOG_INFO, TAG, "MIDIGetBpm player = %p. res=%d",player, res);
@@ -344,7 +344,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIGetTempo(JNIEnv* env, jobject) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDIGetTempo(JNIEnv* env, jobject) {
     if(player){
         int res = fluid_player_get_midi_tempo(player);
         __android_log_print(ANDROID_LOG_INFO, TAG, "MIDIGetTempo player = %p. res = %d",player,res);
@@ -353,7 +353,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDIGetStatus(JNIEnv* env, jobject) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDIGetStatus(JNIEnv* env, jobject) {
     if(player){
         int res = fluid_player_get_status(player);
         __android_log_print(ANDROID_LOG_INFO, TAG, "MIDIGetStatus player = %p.res=%d",player,res);
@@ -362,7 +362,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDISetVolume(JNIEnv* env, jobject, jdouble v) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDISetVolume(JNIEnv* env, jobject, jdouble v) {
     if(playerSynth){
         int drumCh = 9;
         __android_log_print(ANDROID_LOG_INFO, TAG, "MIDISetVolume player = %p. v=%f",player,v);
@@ -379,7 +379,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDISetTempo(JNIEnv* env, jobject, jdouble v) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDISetTempo(JNIEnv* env, jobject, jdouble v) {
     if(player){
         int res = fluid_player_set_tempo(player,FLUID_PLAYER_TEMPO_INTERNAL,v/100);
         __android_log_print(ANDROID_LOG_INFO, TAG, "MIDISetTempo player = %p. t=%f res=%d",player,v,res);
@@ -388,7 +388,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_M
     return FLUID_FAILED;
 }
 
-extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_recorder_FluidSynthDriver_MIDISetMetronomeVolume(JNIEnv* env, jobject, jdouble v) {
+extern "C" JNIEXPORT jint JNICALL Java_com_artinoise_ocarina_FluidSynthDriver_MIDISetMetronomeVolume(JNIEnv* env, jobject, jdouble v) {
     if(playerSynth){
         int drumCh = 9;
         int res = fluid_synth_cc(playerSynth, drumCh, 0x7, (int)v);

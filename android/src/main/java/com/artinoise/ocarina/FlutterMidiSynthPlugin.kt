@@ -1,4 +1,4 @@
-package com.artinoise.recorder;
+package com.artinoise.ocarina;
 
 import android.app.Activity
 import android.content.Context
@@ -14,10 +14,10 @@ import java.lang.Thread
 import java.util.ArrayList
 import kotlinx.coroutines.*
 import java.util.concurrent.TimeUnit
-import com.lib.flutter_blue_plus.FlutterBluePlusPlugin
+import com.artinoise.flutter_synth.FlutterSynthPlugin
 
 /** FlutterMidiSynthPlugin */
-public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBluePlusPlugin): /*FlutterPlugin, MethodCallHandler,*/ /* MidiDriver.OnMidiStartListener,*/
+public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterSynthPlugin): /*FlutterPlugin, MethodCallHandler,*/ /* MidiDriver.OnMidiStartListener,*/
   ActivityAware {
 
   /// The MethodChannel that will the communication between Flutter and native Android
@@ -63,55 +63,6 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
   private var backgroundBendTaskIsRunning = false
 
   private var wand_velocity = 70
-
-  //NO MORE used as a plugin
-  /*
-  override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-    println("FlutterMidiSynthPlugin.kt onAttachedToEngine")
-    attachToEngine(flutterPluginBinding)
-  }
-
-  public fun attachToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-    println("FlutterMidiSynthPlugin.kt attachToEngine")
-    channel = MethodChannel(flutterPluginBinding.binaryMessenger, "flutter_blue_plus/methods")
-    //channel = MethodChannel(flutterPluginBinding.binaryMessenger, "FlutterMidiSynthPlugin")
-    channel.setMethodCallHandler(this)
-    context = flutterPluginBinding.applicationContext
-  }
-
-  // This static function is optional and equivalent to onAttachedToEngine. It supports the old
-  // pre-Flutter-1.12 Android projects. You are encouraged to continue supporting
-  // plugin registration via this function while apps migrate to use the new Android APIs
-  // post-flutter-1.12 via https://flutter.dev/go/android-project-migration.
-  //
-  // It is encouraged to share logic between onAttachedToEngine and registerWith to keep
-  // them functionally equivalent. Only one of onAttachedToEngine or registerWith will be called
-  // depending on the user's project. onAttachedToEngine or registerWith must both be defined
-  // in the same class.
-
-  companion object {
-    @JvmStatic
-    fun registerWith(registrar: Registrar) {
-      println("FlutterMidiSynthPlugin.kt registerWith")
-      val channel = MethodChannel(registrar.messenger(), "FlutterMidiSynthPlugin")
-      channel.setMethodCallHandler(FlutterMidiSynthPlugin())
-    }
-  }
-
-  override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
-    println("FlutterMidiSynthPlugin.kt onMethodCall")
-    manageMethodCall(call, result)
-  }
-
-  override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
-    detachFromEngine(binding)
-  }
-
-  public fun detachFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
-    channel.setMethodCallHandler(null)
-  }
-
-  */
 
   private fun backgroundBendTask(){
     var wait = true
@@ -194,7 +145,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
         val ch = call.argument<Int>("channel")
         val note = call.argument<Int>("note")
         val velocity = call.argument<Int>("velocity")
-        println("noteOn ch " + ch + " note " + note + " velocity " + velocity)
+        //println("noteOn ch " + ch + " note " + note + " velocity " + velocity)
         sendNoteOn(ch!!, note!!, velocity!!)
         result.success(null);
       }
@@ -210,7 +161,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
         val d1 = call.argument<Int>("d1")
         val d2 = call.argument<Int>("d2")
 
-        println("FlutterMidiSynthplugin: midiEvent cmd="+cmd + " d1=" + d1 + " d2=" + d2)
+        //println("FlutterMidiSynthplugin: midiEvent cmd="+cmd + " d1=" + d1 + " d2=" + d2)
 
         if (d2!! >= 0) { //ATTENZIONE ALL NOTES OFF HA D2 == 0
           sendMidi(cmd!!, d1!!, d2)

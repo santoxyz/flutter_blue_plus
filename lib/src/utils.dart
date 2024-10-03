@@ -1,4 +1,4 @@
-part of flutter_blue_plus;
+part of flutter_synth;
 
 String _hexEncode(List<int> numbers) {
   return numbers.map((n) => (n & 0xFF).toRadixString(16).padLeft(2, '0')).join();
@@ -62,77 +62,6 @@ extension AddOrUpdate<T> on List<T> {
     } else {
       add(item);
     }
-  }
-}
-
-extension FutureTimeout<T> on Future<T> {
-  Future<T> fbpTimeout(int seconds, String function) {
-    return this.timeout(Duration(seconds: seconds), onTimeout: () {
-      throw FlutterBluePlusException(
-          ErrorPlatform.fbp, function, FbpErrorCode.timeout.index, "Timed out after ${seconds}s");
-    });
-  }
-
-  Future<T> fbpEnsureDeviceIsConnected(BluetoothDevice device, String function) {
-    // Create a completer to represent the result of this extended Future.
-    var completer = Completer<T>();
-
-    // disconnection listener.
-    var subscription = device.connectionState.listen((event) {
-      if (event == BluetoothConnectionState.disconnected) {
-        if (!completer.isCompleted) {
-          completer.completeError(FlutterBluePlusException(
-              ErrorPlatform.fbp, function, FbpErrorCode.deviceIsDisconnected.index, "Device is disconnected"));
-        }
-      }
-    });
-
-    // When the original future completes
-    // complete our completer and cancel the subscription.
-    this.then((value) {
-      if (!completer.isCompleted) {
-        subscription.cancel();
-        completer.complete(value);
-      }
-    }).catchError((error) {
-      if (!completer.isCompleted) {
-        subscription.cancel();
-        completer.completeError(error);
-      }
-    });
-
-    return completer.future;
-  }
-
-  Future<T> fbpEnsureAdapterIsOn(String function) {
-    // Create a completer to represent the result of this extended Future.
-    var completer = Completer<T>();
-
-    // disconnection listener.
-    var subscription = FlutterBluePlus.adapterState.listen((event) {
-      if (event == BluetoothAdapterState.off || event == BluetoothAdapterState.turningOff) {
-        if (!completer.isCompleted) {
-          completer.completeError(FlutterBluePlusException(
-              ErrorPlatform.fbp, function, FbpErrorCode.adapterIsOff.index, "Bluetooth adapter is off"));
-        }
-      }
-    });
-
-    // When the original future completes
-    // complete our completer and cancel the subscription.
-    this.then((value) {
-      if (!completer.isCompleted) {
-        subscription.cancel();
-        completer.complete(value);
-      }
-    }).catchError((error) {
-      if (!completer.isCompleted) {
-        subscription.cancel();
-        completer.completeError(error);
-      }
-    });
-
-    return completer.future;
   }
 }
 

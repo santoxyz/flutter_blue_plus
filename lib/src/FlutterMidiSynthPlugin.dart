@@ -1,8 +1,8 @@
-part of flutter_blue_plus;
+part of flutter_synth;
 
 class FlutterMidiSynthPlugin {
   //static const MethodChannel _channel = const MethodChannel('FlutterMidiSynthPlugin');
-  static const MethodChannel _channel = const MethodChannel('flutter_blue_plus/methods');
+  static const MethodChannel _channel = MethodChannel('flutter_synth/methods');
   static int curInstrument = -1;
 
   static Future<void> transpose(int t) async {
