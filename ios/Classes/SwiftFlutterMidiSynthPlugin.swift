@@ -580,7 +580,8 @@ import Foundation
             }
             if (command & 0xf0 == 0x90 || command & 0xf0 == 0x80){
                 let mac = synthIdxChannelForMacMap.first { $0.value == (_synthIdx, ch) }?.key
-                _d1 = UInt32(Int(d1) + transposes[mac!]!)
+                let transpose = (mac != nil) ? transposes[mac!] : 0;
+                _d1 = UInt32(Int(d1) + transpose!)
             }
             synths[_synthIdx]?!.midiEvent(cmd: command, d1: _d1, d2: _d2);
         }
