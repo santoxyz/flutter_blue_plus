@@ -224,7 +224,9 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
         result.success(null);
       }
       "setReverb" -> {
-        val amount = call.arguments as Double
+        val args = call.arguments as HashMap<String, *>
+        val synthIdx = args["synthIdx"] as Int
+        val amount = args["amount"] as Double
         for (ch in 0 until 16) {
           sendMidi(0xB0 + ch, 91 /*(CC91: reverb)*/, (amount * 1.27).toInt())
         }
