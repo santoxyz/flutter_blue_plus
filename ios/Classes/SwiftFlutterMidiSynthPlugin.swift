@@ -12,6 +12,7 @@ import Foundation
     var recorders = [String : Int]() //[mac : channel]
     var expressions = [String : Bool]() //[mac : expression]
     var transposes = [String : Int]() //[mac : transpose]
+    var midiPlayer: MidiParsedPlayer?
 
     typealias instrumentInfos = (channel : Int, instrument: Int , bank: Int , mac:String?)
     var instruments = [Int:instrumentInfos]() //[channel, instrumentInfos
@@ -35,6 +36,7 @@ import Foundation
     var backgroundBendTaskIsRunning: Bool = false
 
     let WAND_SYNTH_IDX = 3
+    let PLAYER_SYNTH_IDX = 4
     let wand_velocity = 70
     var classroom: Bool = false
 
@@ -121,12 +123,154 @@ import Foundation
             let muted = args?["muted"] as! Bool
             let synth = args?["synth"] as! Int
             self.setSpecialMode(channel:channel, mode:mode, notes:notes, continuous:continuous, time:time, controller:controller, muted:muted, synthIdx:synth)
-            
+
+        case "uses_internal_midi_management":
+            break
+
+        case "parsed_player":
+            let arguments = call.arguments as? Dictionary<String, Any>
+            let cmd = arguments?["cmd"] as! String
+            let args = arguments?["args"] as! Dictionary<String, Any>
+            let r = self.parsedPlayer(cmd: cmd, cmdArgs: args)
+            result(r)
+
         default:
             print ("unknown method \(call.method)" )
         }
     }
-    
+
+    private func parsedPlayer(cmd: String, cmdArgs: Dictionary<String, Any>) -> Int? {
+        let FAILED = -1
+        let OK = 0
+        let PLAYER_PLAYING = 1
+        let PLAYER_READY = 2
+        let PLAYER_STOPPING = 3
+        let PLAYER_DONE = 4
+
+        if(cmd != "getStatus" && cmd != "currentTicks"){
+            print("SwiftFlutterMidiSynthPlugin.swift parsedPlayer cmd \(cmd) args \(cmdArgs)")
+        }
+         
+        if(synths[PLAYER_SYNTH_IDX] == nil){
+            print("synth is null! creating...")
+            self.initSynth(synthIdx: PLAYER_SYNTH_IDX, instrument: 74);
+        }
+        
+        let synth = synths[PLAYER_SYNTH_IDX]!!;
+        
+        /*guard let cmd = args["cmd"] as? String,
+              let cmdArgs = args["args"] as? [String: Any] else {
+            return FAILED
+        }*/
+
+        switch cmd {
+        case "setAudioDevice":
+            return OK
+
+        case "setReverb":
+            if let value = cmdArgs["value"] as? Double {
+                midiPlayer?.setReverb(value)
+                return OK
+            }
+
+        case "setVolume":
+            if let volume = cmdArgs["volume"] as? Int {
+                midiPlayer?.setVolume(volume)
+                return OK
+            }
+
+        case "setTempo":
+            if let tempo = cmdArgs["tempo"] as? Int {
+                midiPlayer?.setTempo(tempo)
+                return OK
+            }
+
+        case "enableMIDIMetronome":
+            if let enabled = cmdArgs["enabled"] as? Bool {
+                midiPlayer?.setMetronome(enabled: enabled)
+                return OK
+            }
+
+        case "setCountIn":
+            if let enabled = cmdArgs["value"] as? Bool {
+                midiPlayer?.setCountIn(enabled: enabled)
+                return OK
+            }
+
+        case "prepare":
+            if midiPlayer == nil {
+                //midiPlayer = MidiParsedPlayer(synth: synth)
+                midiPlayer = MidiParsedPlayer()
+                midiPlayer?.setSynth(synth)
+            }
+
+            let totalTicks = cmdArgs["totalTicks"] as? Int ?? 0
+            let duration = cmdArgs["tickDuration"] as? Int ?? 0
+            let tpb = cmdArgs["ticksPerBeat"] as? Int ?? 0
+            let bpm = cmdArgs["beatsPerMeasure"] as? Int ?? 0
+
+            midiPlayer?.prepare(totalTicks: totalTicks, tickDurationMicros: duration, ticksPerBeat: tpb, beatsPerMeasure: bpm)
+            return OK
+
+        case "prepare_event":
+            let totalTicks = cmdArgs["totalTicks"] as? Int ?? 0
+            var events: [[UInt8]] = []
+
+            if let rawEvents = cmdArgs["events"] as? [[Any]] {
+                for ev in rawEvents {
+                    let bytes = ev.compactMap { $0 as? Int }.map(UInt8.init)
+                    //let bytes = ev.compactMap { $0 as? Int }.map { NSNumber(value: UInt8($0)) }
+                    events.append(bytes)
+                }
+            }
+
+            midiPlayer?.prepareEvents(events: events, totalTicks: totalTicks)
+            return OK
+
+        case "totalTicks":
+            return 0
+
+        case "currentTime":
+            return Int(midiPlayer?.currentTime() ?? FAILED)
+
+        case "currentTicks":
+            return Int(midiPlayer?.currentTicks() ?? FAILED)
+
+        case "enableTrack":
+            let track = cmdArgs["track"] as? Int ?? 0
+            let enable = cmdArgs["enable"] as? Bool ?? true
+            midiPlayer?.setTrackEnable(track: track, enabled: enable)
+            return OK
+
+        case "getStatus":
+            return Int(midiPlayer?.getStatus() ?? FAILED)
+
+        case "play":
+            print("PLAY COMMAND ->")
+            midiPlayer?.play()
+            return PLAYER_PLAYING
+
+        case "pause":
+            midiPlayer?.pause()
+            return PLAYER_READY
+
+        case "stop":
+            midiPlayer?.stop()
+            return PLAYER_STOPPING
+
+        case "seek":
+            let tick = cmdArgs["current"] as? Int ?? 0
+            midiPlayer?.seek(to: tick)
+            return PLAYER_DONE
+
+        default:
+            print("playerCmd \(cmd) NOT SUPPORTED!")
+        }
+
+        return FAILED
+    }
+
+
 
     private func scaleXpression(min: Int, max: Int, value: UInt32) -> UInt32 {
         let scaled: Double = Double(min) + Double((max-min)*Int(value))/127.0
@@ -229,6 +373,9 @@ import Foundation
     
     //TODO: add soundfont argument
     public func initSynth(synthIdx: Int, instrument: Int){
+        
+        print("creating synth idx=\(synthIdx)")
+        
         setupNotifications()
         synths[synthIdx] = SoftSynth()
         setInstrument(synthIdx: synthIdx, instrument: instrument)

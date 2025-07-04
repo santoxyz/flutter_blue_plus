@@ -6,7 +6,7 @@ import Foundation
 import AudioToolbox
 import AVFoundation //SANTOX reverb and delay
 
-class AudioCommon
+class AudioCommon: NSObject
 {
   var audioGraph:     AUGraph?
   var synthNode       = AUNode()

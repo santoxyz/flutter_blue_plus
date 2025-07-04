@@ -95,4 +95,15 @@ class FlutterMidiSynthPlugin {
     return;
   }
 
+  static Future<int?> usesInternalMidiManagement() async {
+    final res = await _channel.invokeMethod<int>('uses_internal_midi_management');
+    return res;
+  }
+
+  static Future<int?> player(cmd, {args = ""}) async {
+    final res = await _channel.invokeMethod<int>('parsed_player',
+        { "cmd": cmd, "args": args});
+    return res;
+  }
+
 }
