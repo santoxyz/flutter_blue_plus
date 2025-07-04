@@ -12,6 +12,7 @@
 #import <flutter_blue_plus/flutter_blue_plus-Swift.h>
 #endif
 
+
 #import "FlutterBluePlusPlugin.h"
 #import "FlutterMidiSynthPlugin.h"
 
@@ -126,7 +127,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 {
     @try
     {
-        Log(LDEBUG, @"handleMethodCall: %@", call.method);
+        //Log(LDEBUG, @"handleMethodCall: %@", call.method);
 
         if ([@"setOptions" isEqualToString:call.method])
         {
@@ -823,7 +824,9 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             [@"setDelay" isEqualToString:call.method] ||
             [@"initAudioSession" isEqualToString:call.method] ||
             [@"setAllowedInstrumentsIndexes" isEqualToString:call.method] ||
-            [@"setSpecialMode" isEqualToString:call.method]
+            [@"setSpecialMode" isEqualToString:call.method] ||
+            [@"parsed_player" isEqualToString:call.method] ||
+            [@"uses_internal_midi_management" isEqualToString:call.method]
         ) {
             [_midiSynth handleMethodCall:call result:result];
         }

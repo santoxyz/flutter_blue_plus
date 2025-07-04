@@ -8,8 +8,9 @@
 // https://forums.swift.org/t/swift-static-libraries-dont-copy-generated-objective-c-header/19816
 //#import "FlutterMidiSynthPlugin-Swift.h"
 //#import "flutter_blue-Swift.h"
-#import <flutter_blue_plus-Swift.h>
+#import <flutter_blue_plus/flutter_blue_plus-Swift.h>
 #endif
+
 
 @implementation FlutterMidiSynthPlugin
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar>*)registrar {
