@@ -35,8 +35,8 @@ import Foundation
     var specialModes = [Int:specialModeInfos]() //[channel, specialModeInfos]
     var backgroundBendTaskIsRunning: Bool = false
 
-    let WAND_SYNTH_IDX = 3
-    let PLAYER_SYNTH_IDX = 4
+    public static let WAND_SYNTH_IDX = 3
+    public static let PLAYER_SYNTH_IDX = 4
     let wand_velocity = 70
     var classroom: Bool = false
 
@@ -147,16 +147,16 @@ import Foundation
         let PLAYER_STOPPING = 3
         let PLAYER_DONE = 4
 
-        if(cmd != "getStatus" && cmd != "currentTicks"){
+        if(cmd != "getStatus" && cmd != "currentTicks" && cmd != "prepare_event"){
             print("SwiftFlutterMidiSynthPlugin.swift parsedPlayer cmd \(cmd) args \(cmdArgs)")
         }
          
-        if(synths[PLAYER_SYNTH_IDX] == nil){
+        if(synths[SwiftFlutterMidiSynthPlugin.PLAYER_SYNTH_IDX] == nil){
             print("synth is null! creating...")
-            self.initSynth(synthIdx: PLAYER_SYNTH_IDX, instrument: 74);
+            self.initSynth(synthIdx: SwiftFlutterMidiSynthPlugin.PLAYER_SYNTH_IDX, instrument: 74);
         }
         
-        let synth = synths[PLAYER_SYNTH_IDX]!!;
+        let synth = synths[SwiftFlutterMidiSynthPlugin.PLAYER_SYNTH_IDX]!!;
         
         /*guard let cmd = args["cmd"] as? String,
               let cmdArgs = args["args"] as? [String: Any] else {
@@ -199,7 +199,6 @@ import Foundation
 
         case "prepare":
             if midiPlayer == nil {
-                //midiPlayer = MidiParsedPlayer(synth: synth)
                 midiPlayer = MidiParsedPlayer()
                 midiPlayer?.setSynth(synth)
             }
@@ -398,7 +397,7 @@ import Foundation
         //}
     }
     
-    private func getSequencer(synthIdx: Int, channel: Int) -> Sequencer{
+    func getSequencer(synthIdx: Int, channel: Int) -> Sequencer{
         if (sequencers[synthIdx]?[channel] == nil){
             print("creating sequencer for channel \(channel) synthIdx \(synthIdx)")
             var v: [Int:Sequencer] = sequencers[synthIdx] ?? [:]
@@ -612,7 +611,7 @@ import Foundation
         let infos = specialModes[ch] //(channel : Int, mode: Int, notes:[Int], continuous: Bool , time: Int, controller: Int, muted: Bool)
 
         if (infos?.mode == 1){ //WAND MODE
-            _synthIdx = WAND_SYNTH_IDX;
+            _synthIdx = SwiftFlutterMidiSynthPlugin.WAND_SYNTH_IDX;
             //print("SwiftFlutterMidiSyntPlugin.swift midiEvent cmd \(command)  ch \(ch) d1 \(d1) d2 \(d2) infos \(infos) (RAW) ")
             //_command = (command & 0xf0) | UInt32(ch)
             if(_command & 0xf0 == 0xb0){

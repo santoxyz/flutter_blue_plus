@@ -8,18 +8,25 @@ import AVFoundation //SANTOX reverb and delay
 
 class AudioCommon: NSObject
 {
-  var audioGraph:     AUGraph?
-  var synthNode       = AUNode()
-  var outputNode      = AUNode()
-  var synthUnit:    AudioUnit?
-  var reverbUnit:   AudioUnit?
-  var delayUnit:    AudioUnit?
+    var audioGraph:     AUGraph?
+    var synthNode       = AUNode()
+    var outputNode      = AUNode()
+    var synthUnit:    AudioUnit?
+    var reverbUnit:   AudioUnit?
+    var delayUnit:    AudioUnit?
     var mixerUnit: AudioUnit? //to set output Volume
-  var patch = UInt32(0)
+    var patch = UInt32(0)
   
-  var reverbNode = AUNode()
-  var delayNode = AUNode()
+    var reverbNode = AUNode()
+    var delayNode = AUNode()
     var mixerNode = AUNode()
+    
+    var renderCallback: ((Int) -> Void)? //called for every render pass
+    
+    func sampleRate() -> Double {
+        let audioSession = AVAudioSession.sharedInstance()
+        return audioSession.sampleRate
+    }
     
     func initAudioSession(){
         
@@ -62,59 +69,81 @@ class AudioCommon: NSObject
         print ("preferredIOBufferDuration=\(audioSession.preferredIOBufferDuration) ioBufferDuration= \(audioSession.ioBufferDuration) samplerate=\(audioSession.sampleRate)")
     }
     
-  func initAudio() {
-    checkError(osstatus: NewAUGraph(&audioGraph))
-    createReverbNode(audioGraph: audioGraph!, outputNode: &reverbNode) //SANTOX
-    createDelayNode(audioGraph: audioGraph!, outputNode: &delayNode) //SANTOX
-    createMixerNode(audioGraph: audioGraph!, outputNode: &mixerNode) //SANTOX
-    createOutputNode(audioGraph: audioGraph!, outputNode: &outputNode) //SANTOX
-    createSynthNode()
-    checkError(osstatus: AUGraphOpen(audioGraph!))
-    // get the synth unit
-    checkError(osstatus: AUGraphNodeInfo(audioGraph!, synthNode, nil, &synthUnit))
-    checkError(osstatus: AUGraphNodeInfo(audioGraph!, reverbNode, nil, &reverbUnit)) //SANTOX
-    checkError(osstatus: AUGraphNodeInfo(audioGraph!, delayNode, nil, &delayUnit)) //SANTOX
-    checkError(osstatus: AUGraphNodeInfo(audioGraph!, mixerNode, nil, &mixerUnit)) //SANTOX
+    func initAudio() {
+        checkError(osstatus: NewAUGraph(&audioGraph))
+        createReverbNode(audioGraph: audioGraph!, outputNode: &reverbNode) //SANTOX
+        createDelayNode(audioGraph: audioGraph!, outputNode: &delayNode) //SANTOX
+        createMixerNode(audioGraph: audioGraph!, outputNode: &mixerNode) //SANTOX
+        createOutputNode(audioGraph: audioGraph!, outputNode: &outputNode) //SANTOX
+        createSynthNode()
+        checkError(osstatus: AUGraphOpen(audioGraph!))
+        // get the synth unit
+        checkError(osstatus: AUGraphNodeInfo(audioGraph!, synthNode, nil, &synthUnit))
+        checkError(osstatus: AUGraphNodeInfo(audioGraph!, reverbNode, nil, &reverbUnit)) //SANTOX
+        checkError(osstatus: AUGraphNodeInfo(audioGraph!, delayNode, nil, &delayUnit)) //SANTOX
+        checkError(osstatus: AUGraphNodeInfo(audioGraph!, mixerNode, nil, &mixerUnit)) //SANTOX
 
-    let synthOutputElement: AudioUnitElement = 0
-    let ioUnitInputElement: AudioUnitElement = 0
-/*    checkError(osstatus:
-      AUGraphConnectNodeInput(audioGraph!, synthNode, synthOutputElement,
-                              outputNode, ioUnitInputElement))
-*/
-    checkError(osstatus:
-      AUGraphConnectNodeInput(audioGraph!, synthNode, synthOutputElement,
-                              reverbNode, ioUnitInputElement))
-    checkError(osstatus:
-      AUGraphConnectNodeInput(audioGraph!, reverbNode, synthOutputElement,
-                              delayNode, ioUnitInputElement))
-    checkError(osstatus:
-      AUGraphConnectNodeInput(audioGraph!, delayNode, synthOutputElement,
-                              mixerNode, ioUnitInputElement))
-    checkError(osstatus:
-      AUGraphConnectNodeInput(audioGraph!, mixerNode, synthOutputElement,
-                              outputNode, ioUnitInputElement))
+        renderNotify()
 
+        let synthOutputElement: AudioUnitElement = 0
+        let ioUnitInputElement: AudioUnitElement = 0
+        /*    checkError(osstatus:
+          AUGraphConnectNodeInput(audioGraph!, synthNode, synthOutputElement,
+                                  outputNode, ioUnitInputElement))
+        */
+        checkError(osstatus:
+          AUGraphConnectNodeInput(audioGraph!, synthNode, synthOutputElement,
+                                  reverbNode, ioUnitInputElement))
+        checkError(osstatus:
+          AUGraphConnectNodeInput(audioGraph!, reverbNode, synthOutputElement,
+                                  delayNode, ioUnitInputElement))
+        checkError(osstatus:
+          AUGraphConnectNodeInput(audioGraph!, delayNode, synthOutputElement,
+                                  mixerNode, ioUnitInputElement))
+        checkError(osstatus:
+          AUGraphConnectNodeInput(audioGraph!, mixerNode, synthOutputElement,
+                                  outputNode, ioUnitInputElement))
+
+        checkError(osstatus: AUGraphInitialize(audioGraph!))
+        checkError(osstatus: AUGraphStart(audioGraph!))
+        loadSoundFont()
+        loadPatch(patchNo: 0)
+        setReverb(dryWet:0.0)
+        setDelay(dryWet:0.0)
+        setVolume(val:2.0)
+    }
+
+    func renderNotify() {
+        let selfPtr = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+
+        AudioUnitAddRenderNotify(mixerUnit!,
+            { inRefCon, actionFlagsPtr, inTimeStamp, busNumber, frameCount, ioData in
+                // Read the flags directly:
+                let flags = actionFlagsPtr.pointee
+                // Only fire on the *pre*‑render phase:
+                if flags.contains(.unitRenderAction_PreRender) {
+                    // inRefCon is non‑optional, so just use it:
+                    let audioCommon = Unmanaged<AudioCommon>
+                        .fromOpaque(inRefCon)
+                        .takeUnretainedValue()
+                    audioCommon.renderCallback?(Int(frameCount))
+                }
+                return noErr
+            },
+            selfPtr
+        )
+    }
     
-    checkError(osstatus: AUGraphInitialize(audioGraph!))
-    checkError(osstatus: AUGraphStart(audioGraph!))
-    loadSoundFont()
-    loadPatch(patchNo: 0)
-    setReverb(dryWet:0.0)
-    setDelay(dryWet:0.0)
-    setVolume(val:2.0)
-  }
-  
-  // Mark: - Audio Init Utility Methods
-  func createOutputNode(audioGraph: AUGraph, outputNode: UnsafeMutablePointer<AUNode>) {
+    // Mark: - Audio Init Utility Methods
+    func createOutputNode(audioGraph: AUGraph, outputNode: UnsafeMutablePointer<AUNode>) {
     var cd = AudioComponentDescription(
       componentType: OSType(kAudioUnitType_Output),
       componentSubType: OSType(kAudioUnitSubType_RemoteIO),
       componentManufacturer: OSType(kAudioUnitManufacturer_Apple),
       componentFlags: 0,componentFlagsMask: 0)
     checkError(osstatus: AUGraphAddNode(audioGraph, &cd, outputNode))
-  }
-  
+    }
+
     func setVolume(val: Float){
         print("AudioCommon.swift setVolume \(val)")
 
@@ -288,7 +317,7 @@ class AudioCommon: NSObject
       &disabled,
       UInt32(MemoryLayout<UInt32>.size)))
     
-    // the previous programChangeCommand just triggered a preload
+      // the previous programChangeCommand just triggered a preload
     // this one actually changes to the new voice
     checkError(osstatus: MusicDeviceMIDIEvent(synthUnit!, programChangeCommand, patch, 0, 0))
     

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AudioToolbox //AUGraph
 
 // Represents one MIDI event as array of bytes
 typealias MidiEvent = [UInt8]
@@ -16,9 +17,8 @@ typealias Track = [Int: [MidiEvent]]
 @objc class MidiParsedPlayer: NSObject {
     
     // MARK: - Properties
-    
+
     private var synth: SoftSynth?
-    
     private var totalTicks: Int = 0
     private var tickDuration: Int = 1000 // microseconds
     private var tickPerBeat: Int = 120
@@ -32,26 +32,64 @@ typealias Track = [Int: [MidiEvent]]
     private var metronomeEnabled = false
     private var countInEnabled = false
     private var countInBeats = 0
+    private var countInRemainingBeats  = 0    // beats left in the count‑in
+    private var onCountInComplete: (() -> Void)?  // store the completion
     
     private var eventMask: UInt16 = 0xFFFF
     
     private var tracks: Track = [:]
     private var metronome: Track = [:]
     
-    private var tickTimer: DispatchSourceTimer?
-    private let timerQueue = DispatchQueue(label: "com.yourcompany.midi.tickTimer")
+    //private var tickTimer: DispatchSourceTimer?
+    //private let timerQueue = DispatchQueue(label: "com.artinoise.midi.tickTimer")
     
     var onEvent: ((Int) -> Void)?
     var onDone: (() -> Void)?
     
     private let metronomeChannel = 9
+    private var metSamplesCounter = 0.0
     
     private let lock = NSLock()
+    
+    private var accumulatedSamples: Double = 0
+    private var samplesPerTick: Double = 0
+
+    private var isProgramChangePending = false
+    private var pendingEvents: [MidiEvent] = []
+    private var pendingMetOff = Set<Int>()
+    
+    func configureSampleRate(_ sampleRate: Double) {
+        samplesPerTick = (Double(tickDuration) / 1_000_000.0) * sampleRate / tempo
+    }
+    
+    func configureRenderTiming() {
+        guard let synth = synth else { return }
+        
+        let sampleRate = synth.sampleRate()
+        configureSampleRate(sampleRate)
+    }
+    
+    //CALLED FROM THE AUDIOUNIT CALLBACK  - see AudioCommon renderNotify
+    func audioRenderTick(frames: Int) {
+        let framesD = Double(frames)
+        accumulatedSamples += framesD
+        metSamplesCounter    += framesD
+
+        // -- handle your existing “MIDI sequencer” ticks --
+        while accumulatedSamples >= samplesPerTick {
+            accumulatedSamples -= samplesPerTick
+            processTick()    // your existing code
+        }
+    }
     
     // MARK: - Public API
     
     func setSynth(_ s: SoftSynth) {
         synth = s
+        synth?.renderCallback = { [weak self] frames in
+            self?.audioRenderTick(frames: frames)
+        }
+
     }
     
     func prepare(totalTicks: Int, tickDurationMicros: Int, ticksPerBeat: Int, beatsPerMeasure: Int) {
@@ -82,29 +120,26 @@ typealias Track = [Int: [MidiEvent]]
         guard prepared, !playing else { return }
         
         playing = true
-        
-        if tickTimer != nil {
-            tickTimer?.cancel()
-            tickTimer = nil
-        }
-        
+
+        curTicks = 0
+        accumulatedSamples = 0
         startCountInIfNeeded {
-            self.startTickLoop()
+            self.configureRenderTiming()
         }
     }
     
     func stop() {
         playing = false
-        tickTimer?.cancel()
-        tickTimer = nil
+        //tickTimer?.cancel()
+        //tickTimer = nil
         curTicks = 0
         allNotesOff()
     }
     
     func pause() {
         playing = false
-        tickTimer?.cancel()
-        tickTimer = nil
+        //tickTimer?.cancel()
+        //tickTimer = nil
         allNotesOff()
     }
     
@@ -167,9 +202,20 @@ typealias Track = [Int: [MidiEvent]]
         
         countInBeats = beatsPerMeasure +
             ((curTicks % (beatsPerMeasure * tickPerBeat)) / tickPerBeat)
+ 
+        // Calculate how many beats until the next bar line:
+        let ticksIntoMeasure   = (curTicks % (beatsPerMeasure * tickPerBeat))
+        let beatsIntoMeasure   = ticksIntoMeasure / tickPerBeat
+        let beatsUntilBarStart = beatsPerMeasure - beatsIntoMeasure
+
+        // We want to count all those beats, plus a full measure before the downbeat:
+        countInBeats           = beatsPerMeasure + beatsUntilBarStart
+        countInRemainingBeats  = countInBeats
+        onCountInComplete      = completion
+
         
-        var beat = 0
-        
+        /*
+         var beat = 0
         func tickCountIn() {
             guard playing else { return }
             
@@ -181,15 +227,94 @@ typealias Track = [Int: [MidiEvent]]
             } else {
                 let intervalUs = Int(Double(tickDuration * tickPerBeat) / tempo)
                 let delayNs = UInt64(intervalUs) * 1000
-                timerQueue.asyncAfter(deadline: .now() + .nanoseconds(Int(delayNs))) {
-                    tickCountIn()
-                }
+                timerQueue.asyncAfter(deadline: .now() + .nanoseconds(Int(delayNs))) {tickCountIn()}
             }
         }
         
         tickCountIn()
+        */
+        
     }
     
+    func processTick() {
+        guard playing else { return }
+        
+        let ticksPerBeat = tickPerBeat
+        let offTicks     = ticksPerBeat / 2
+        let metronomeNote = UInt8(31)
+        
+        // ── 1) COUNT‑IN beats, if active ──
+        if countInRemainingBeats > 0 {
+          // Only fire on the *beat* boundaries:
+          if curTicks % tickPerBeat == 0 {
+            // accent only on the downbeat of each measure:
+            let beatIndex = ((countInBeats - countInRemainingBeats) % beatsPerMeasure)
+            let isAccent  = (beatIndex == 0)
+            let vel       = isAccent ? 100 : 70
+
+            let noteOn: MidiEvent = [
+              0x90 | UInt8(metronomeChannel),
+              metronomeNote,
+              UInt8(vel)
+            ]
+            synthEventSend(synthCh: metronomeChannel, data: noteOn)
+
+            // schedule Note‑Off half‑a‑beat later:
+            pendingMetOff.insert(curTicks + tickPerBeat/2)
+
+            countInRemainingBeats -= 1
+
+            // If that was the last count‑in beat, fire the completion:
+            if countInRemainingBeats == 0 {
+              onCountInComplete?()
+            }
+          }
+
+          // advance tick and exit early—no normal sequencer until count‑in done:
+          curTicks += 1
+          return
+        }
+        
+        if (metronomeEnabled){
+            // ── 1) Metronome ON, when we hit the top of the beat ──
+            if curTicks % ticksPerBeat == 0 {
+                let accented = (curTicks % (ticksPerBeat * 4) == 0)  // e.g. accent every bar
+                let velocity = accented ? UInt8(100) : UInt8(70)
+                let noteOn:  MidiEvent = [0x90 | UInt8(metronomeChannel),
+                                          metronomeNote,
+                                          velocity]
+                synthEventSend(synthCh: metronomeChannel, data: noteOn)
+                
+                // schedule the OFF for half a beat later:
+                pendingMetOff.insert(curTicks + offTicks)
+            }
+            
+            // ── 2) Metronome OFF, when we reach a scheduled off tick ──
+            if pendingMetOff.contains(curTicks) {
+                let noteOff: MidiEvent = [0x80 | UInt8(metronomeChannel),
+                                          metronomeNote,
+                                          0]
+                synthEventSend(synthCh: metronomeChannel, data: noteOff)
+                pendingMetOff.remove(curTicks)
+            }
+        }
+        
+        let events = getEventsAtCurrentTick()
+        
+        if !events.isEmpty {
+            executeEvents(events)
+        }
+        
+        curTicks += 1
+        
+        if curTicks >= totalTicks {
+            playing = false
+            onDone?()
+        }
+    }
+    
+    ///REPLACED WITH PROCESSTICK THAT USES AudioUnit SynthUnit CALLBACK (iOS Audio thread)
+    /*
     private func startTickLoop() {
         let intervalUs = Int(Double(tickDuration) / tempo)
         let intervalNs = UInt64(intervalUs) * 1000
@@ -227,6 +352,7 @@ typealias Track = [Int: [MidiEvent]]
         
         tickTimer?.resume()
     }
+    */
     
     private func getEventsAtCurrentTick() -> [MidiEvent] {
         var result: [MidiEvent] = []
@@ -248,21 +374,60 @@ typealias Track = [Int: [MidiEvent]]
         }
     }
     
+    private func programChangeDidComplete() {
+        isProgramChangePending = false
+        
+        for event in pendingEvents {
+            synthEventSend(synthCh: Int(event[0] & 0x0F), data: event)
+        }
+        pendingEvents.removeAll()
+    }
+    
     private func synthEventSend(synthCh: Int, data: MidiEvent) {
         guard let synth = synth else { return }
         
         let cmd = data[0] & 0xF0
+        
+        if isProgramChangePending && cmd != 0xC0 {
+            pendingEvents.append(data)
+            return
+        }
+        
         switch cmd {
-        case 0x90:
+        case 0x90: //Note ON
             print("MidiParsedPlayer noteON ch \(synthCh) d1 \(data[1]) d2 \(data[2])")
             synth.midiEvent(cmd: 0x90 | UInt32(synthCh), d1: UInt32(data[1]), d2: UInt32(data[2]))
-        case 0x80:
+        case 0x80: //Note OFF
+            print("MidiParsedPlayer noteOFF ch \(synthCh) d1 \(data[1]) d2 \(data[2])")
             synth.midiEvent(cmd: 0x80 | UInt32(synthCh), d1: UInt32(data[1]), d2: 0)
         case 0xB0:
+            print("MidiParsedPlayer CC ch \(synthCh) d1 \(data[1]) d2 \(data[2])")
             synth.midiEvent(cmd: 0xB0 | UInt32(synthCh), d1: UInt32(data[1]), d2: UInt32(data[2]))
-        case 0xC0:
-            synth.midiEvent(cmd: 0xC0 | UInt32(synthCh), d1: UInt32(data[1]), d2: 0)
+        case 0xC0: //Program change
+            isProgramChangePending = true
+            DispatchQueue.main.async { //Can't do loadPatch while (potentially) rendering audio
+                print("MidiParsedPlayer ProgramChange ch \(synthCh) d1 \(data[1])")
+                
+                if let graph = synth.audioGraph {
+                    AUGraphStop(graph)
+                }
+                
+                synth.loadPatch(patchNo: Int(data[1]), channel:synthCh)
+                synth.midiEvent(cmd: 0xC0 | UInt32(synthCh), d1: UInt32(data[1]), d2: 0)
+                
+                if let graph = synth.audioGraph {
+                    AUGraphUpdate(graph, nil)
+                    AUGraphStart(graph)
+                }
+                
+                //send ProgramChange a second time after starting the graph
+                synth.midiEvent(cmd: 0xC0 | UInt32(synthCh), d1: UInt32(data[1]), d2: 0)
+
+                self.programChangeDidComplete()
+                
+            }
         case 0xE0:
+            print("MidiParsedPlayer E0 ch \(synthCh) d1 \(data[1]) d2 \(data[2])")
             synth.midiEvent(cmd: 0xE0 | UInt32(synthCh), d1: UInt32(data[1]), d2: 0)
         default:
             print("Not implemented \(data[0])")
@@ -279,9 +444,9 @@ typealias Track = [Int: [MidiEvent]]
         let intervalUs = tickDuration / 2
         let delayNs = UInt64(intervalUs) * 1000
         
-        timerQueue.asyncAfter(deadline: .now() + .nanoseconds(Int(delayNs))) {
+        //timerQueue.asyncAfter(deadline: .now() + .nanoseconds(Int(delayNs))) {
             self.synthEventSend(synthCh: self.metronomeChannel, data: noteOff)
-        }
+        //}
     }
     
     private func allNotesOff() {
