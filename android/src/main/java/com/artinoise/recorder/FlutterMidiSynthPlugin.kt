@@ -3,18 +3,17 @@ package com.artinoise.recorder;
 import android.app.Activity
 import android.content.Context
 import androidx.annotation.NonNull
-import io.flutter.plugin.common.MethodCall
-import io.flutter.plugin.common.MethodChannel
+import com.lib.flutter_blue_plus.FlutterBluePlusPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
-import java.util.*
-import java.util.HashMap
-import java.lang.*
-import java.lang.Thread
-import java.util.ArrayList
+import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.*
+import java.lang.*
+import java.util.*
+import java.util.ArrayList
+import java.util.HashMap
 import java.util.concurrent.TimeUnit
-import com.lib.flutter_blue_plus.FlutterBluePlusPlugin
 
 /** FlutterMidiSynthPlugin */
 public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBluePlusPlugin): /*FlutterPlugin, MethodCallHandler,*/ /* MidiDriver.OnMidiStartListener,*/
@@ -37,6 +36,7 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
 
   private var specialModes = HashMap<Int,HashMap<String, *>>()
   private var lastNoteForChannel = mutableListOf<Int>(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+  private var transposeForChannel = mutableListOf<Int>(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
 
   private var movingWindowDepth = 1
   private var movingWindowForChannel = mutableListOf(
@@ -194,6 +194,14 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
         selectInstrument(ch!!, i!!, bank!!,mac!!,expression!!)
         result.success(null);
       }
+      "transposeCh" -> {
+        val synthIdx = call.argument<Int>("synthIdx")
+        val ch = call.argument<Int>("channel") ?:0
+        val transpose = call.argument<Int>("transpose") ?: 0
+        println("transposeCh ch " + ch + " transpose " + transpose)
+        transposeForChannel[ch!!] = transpose!!
+        result.success(null);
+      }
       "noteOn" -> {
         val ch = call.argument<Int>("channel")
         val note = call.argument<Int>("note")
@@ -270,7 +278,8 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
         println("FlutterMidiSynthplugin: MIDIPrepare");
         val name = call.argument<String>("name")
         val ticksPerBeat = call.argument<Int>("ticksPerBeat")
-        val path: String = context.getApplicationContext().getDir("flutter", Context.MODE_PRIVATE).getPath()
+        //val path: String = context.getApplicationContext().getDir("flutter", Context.MODE_PRIVATE).getPath()
+        val path: String = context.getApplicationContext().getFilesDir().getPath()
         val r = midiBridge.MIDIPrepare(path + "/" + name, ticksPerBeat!!);
         result.success(r.toString());
       }
@@ -442,10 +451,12 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
       _v = wand_velocity - 10
     }
 
-    msg[0] = (0x90 or _ch).toByte()
-    msg[1] = n.toByte()
-    msg[2] = _v.toByte()
-    if ( midiBridge.engine != null) midiBridge.write(msg)
+    if(n + transposeForChannel[_ch] >= 0) {
+      msg[0] = (0x90 or _ch).toByte()
+      msg[1] = (n + transposeForChannel[_ch]).toByte()
+      msg[2] = _v.toByte()
+      if (midiBridge.engine != null) midiBridge.write(msg)
+    }
   }
 
   public fun sendNoteOff(ch: Int, n: Int, v: Int) {
@@ -454,10 +465,12 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
     if(specialModes[_ch]?.get("mode") == 1){
       _ch += 1
     }
-    msg[0] = (0x80 or _ch).toByte()
-    msg[1] = n.toByte()
-    msg[2] = v.toByte()
-    if (midiBridge.engine != null) midiBridge.write(msg)
+    if(n + transposeForChannel[_ch] >= 0) {
+      msg[0] = (0x80 or _ch).toByte()
+      msg[1] = (n + transposeForChannel[_ch]).toByte()
+      msg[2] = v.toByte()
+      if (midiBridge.engine != null) midiBridge.write(msg)
+    }
   }
 
   public fun sendMidiProgramChange(ch: Int, i: Int) {

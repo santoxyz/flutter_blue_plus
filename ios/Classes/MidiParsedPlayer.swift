@@ -33,6 +33,7 @@ typealias Track = [Int: [MidiEvent]]
     private var countInEnabled = false
     private var countInBeats = 0
     private var countInRemainingBeats  = 0    // beats left in the count‑in
+    private var countInTicks: Int = 0
     private var onCountInComplete: (() -> Void)?  // store the completion
     
     private var eventMask: UInt16 = 0xFFFF
@@ -102,11 +103,12 @@ typealias Track = [Int: [MidiEvent]]
         self.tickPerBeat = ticksPerBeat
         self.beatsPerMeasure = beatsPerMeasure
         self.curTicks = 0
+        self.countInTicks = 0
         self.tempo = 1.0
         self.metronomeEnabled = false
         self.countInEnabled = false
         self.tracks.removeAll()
-        prepareMetronome()
+        //prepareMetronome()
         self.prepared = true
     }
     
@@ -122,6 +124,7 @@ typealias Track = [Int: [MidiEvent]]
         playing = true
 
         curTicks = 0
+        countInTicks = 0
         accumulatedSamples = 0
         startCountInIfNeeded {
             self.configureRenderTiming()
@@ -133,6 +136,7 @@ typealias Track = [Int: [MidiEvent]]
         //tickTimer?.cancel()
         //tickTimer = nil
         curTicks = 0
+        countInTicks = 0
         allNotesOff()
     }
     
@@ -246,7 +250,7 @@ typealias Track = [Int: [MidiEvent]]
         // ── 1) COUNT‑IN beats, if active ──
         if countInRemainingBeats > 0 {
           // Only fire on the *beat* boundaries:
-          if curTicks % tickPerBeat == 0 {
+          if countInTicks % ticksPerBeat == 0 {
             // accent only on the downbeat of each measure:
             let beatIndex = ((countInBeats - countInRemainingBeats) % beatsPerMeasure)
             let isAccent  = (beatIndex == 0)
@@ -260,18 +264,21 @@ typealias Track = [Int: [MidiEvent]]
             synthEventSend(synthCh: metronomeChannel, data: noteOn)
 
             // schedule Note‑Off half‑a‑beat later:
-            pendingMetOff.insert(curTicks + tickPerBeat/2)
+            pendingMetOff.insert(countInTicks + ticksPerBeat/2)
 
             countInRemainingBeats -= 1
+            print("countInRemainingBeats \(countInRemainingBeats) countInTicks \(countInTicks) curTicks \(curTicks)")
 
             // If that was the last count‑in beat, fire the completion:
             if countInRemainingBeats == 0 {
               onCountInComplete?()
             }
+            
+              
           }
 
           // advance tick and exit early—no normal sequencer until count‑in done:
-          curTicks += 1
+          countInTicks += 1
           return
         }
         
@@ -359,9 +366,10 @@ typealias Track = [Int: [MidiEvent]]
         if let trackEvents = tracks[curTicks] {
             result.append(contentsOf: trackEvents)
         }
+        /*
         if metronomeEnabled, let metronomeEvents = metronome[curTicks] {
             result.append(contentsOf: metronomeEvents)
-        }
+        }*/
         return result
     }
     
@@ -469,6 +477,7 @@ typealias Track = [Int: [MidiEvent]]
         return playing ? 1 : 0
     }
     
+    /*
     private func prepareMetronome() {
         metronome.removeAll()
         
@@ -493,6 +502,7 @@ typealias Track = [Int: [MidiEvent]]
             tick += tickPerBeat
         }
     }
+    */
 
     
 }

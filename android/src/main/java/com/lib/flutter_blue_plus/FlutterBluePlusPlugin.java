@@ -1456,6 +1456,7 @@ public class FlutterBluePlusPlugin implements
                 ///FlutterMidiSynthPlugin
                 case "initSynth":
                 case "setInstrument":
+                case "transposeCh":
                 case "noteOn":
                 case "noteOff":
                 case "midiEvent":

@@ -7,6 +7,10 @@ class FlutterMidiSynthPlugin {
   //static const MethodChannel _channel = const MethodChannel('FlutterMidiSynthPlugin');
   static const MethodChannel _channel = const MethodChannel('flutter_blue_plus/methods');
 
+  static Future<void> transposeCh(int synthIdx, int ch, int t) async {
+    return _channel.invokeMethod('transposeCh',{'synthIdx':synthIdx, 'channel':ch, 'transpose':t});
+  }
+
   static Future<void> transpose(int t) async {
     return _channel.invokeMethod('transpose',t);
   }

@@ -35,7 +35,8 @@ public class MidiBridge {
     }
 
     public void setFluidSynthEngine() {
-        String path = context.getApplicationContext().getDir("flutter", Context.MODE_PRIVATE).getPath();
+        //String path = context.getApplicationContext().getDir("flutter", Context.MODE_PRIVATE).getPath();
+        String path = context.getApplicationContext().getFilesDir().getPath();
         String sfPath = path + "/soundfont_GM.sf2";
         Log.i("MidiBridge", "setFluidSynthEngine sfPath=" + sfPath);
 
