@@ -419,7 +419,7 @@ import Foundation
     
     private func setInstrument(synthIdx: Int, instrument: Int, channel: Int = 0, bank: Int = 0, mac: String? = nil, expression: Bool? = false, transpose: Int? = 0){
         
-        print ("setInstrument synthIdx=\(synthIdx) instrument=\(instrument) channel=\(channel) bank=\(bank) mac=\(mac) expression=\(expression)")
+        print ("setInstrument synthIdx=\(synthIdx) instrument=\(instrument) channel=\(channel) bank=\(bank) mac=\(mac) expression=\(expression) transpose=\(transpose)")
         if(!allowedInstrumentsIndexes.contains(instrument) && bank == 0){
             print(" error! Instrument \(instrument) not found in \(allowedInstrumentsIndexes)")
             return
@@ -429,7 +429,6 @@ import Foundation
             recorders[mac!] = channel
             expressions[mac!] = expression
             transposes[mac!] = transpose
-
         }
 
         let specialModeInfos = specialModes[Int(channel)]
@@ -460,7 +459,7 @@ import Foundation
         //if (!expression){
         //    vel = Int(xpressionsMap[channel]?.last ?? UInt32(velocity))
         //}
-        //print ("noteOnWithMac synthIdx=\(synthIdx) ch=\(ch) note=\(note) velocity=\(velocity) expression=\(expression) mac=\(mac)")
+        print ("noteOnWithMac synthIdx=\(synthIdx) ch=\(ch) note=\(note) velocity=\(velocity) expression=\(expression) mac=\(mac) transpose=\(transpose)")
         noteOn(synthIdx: synthIdx, channel: ch, note: note+transpose, velocity: vel)
     }
     

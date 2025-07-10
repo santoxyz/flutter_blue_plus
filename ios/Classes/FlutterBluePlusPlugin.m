@@ -813,6 +813,10 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
           _transpose = (int)t.integerValue;
         }
 
+        //transposeCh
+        else if([@"transposeCh" isEqualToString:call.method]){
+            NSLog(@"transposeCh - NOT IMPLEMENTED on iOS -- Use setInstrument instead");
+        }
         //FlutterMidiSynthPlugin
         else if(
             [@"initSynth" isEqualToString:call.method] ||
