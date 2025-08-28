@@ -765,10 +765,21 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
       sendMidi((0xB0 or channel), 7, if(muted) 0 else 127)
 
     } else {
-      // Enable/Disable portamento - mode 1 is WAND Mode
-      //sendMidi((0xB0 or channel), 65, if (mode == 1) 127 else 0) //Portamento ON/OFF
-      //sendMidi((0xB0 or channel), 5, time) //Portamento time (CC5)
-      //sendMidi((0xB0 or channel), 84, controller) //Portamento Controller (CC84) TEST = 64
+      // Leaving WAND mode: restore default pitch bend range (±2) and re-center bend
+      // RPN 0,0 then Data Entry MSB = 2, then RPN null
+      sendMidi((0xB0 or channel),  101, 0)
+      sendMidi((0xB0 or channel),  100, 0)
+      sendMidi((0xB0 or channel),  6,   2)
+      sendMidi((0xB0 or channel),  101, 127)
+      sendMidi((0xB0 or channel),  100, 127)
+
+      // Center pitch bend to 8192 (LSB=0x00, MSB=0x40)
+      sendMidi((0xE0 or channel), 0x00, 0x40)
+
+      // Reset internal bend state
+      bendForChannel[channel] = 8192
+      targetBendForChannel[channel] = 8192
+
       backgroundBendTaskIsRunning = false
     }
   }

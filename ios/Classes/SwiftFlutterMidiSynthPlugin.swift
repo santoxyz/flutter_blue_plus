@@ -799,10 +799,29 @@ import Foundation
             synths[synthIdx]?!.midiEvent(cmd: 0xB0 | channel, d1: 7, d2: muted ? 0 : 127)
 
         } else {
-            // Enable/Disable portamento - mode 1 is WAND Mode
-            //synth!.midiEvent(cmd: 0xB0 | channel, d1: 65, d2: mode == 1 ? 127 : 0)
-            //synth!.midiEvent(cmd: 0xB0 | channel, d1: 5, d2: time) //Portamento time (CC5)
-            //synth!.midiEvent(cmd: 0xB0 | channel, d1: 84, d2: controller /*note*/ /*infos?.5*/ /*?? 0*/) //Portamento Controller (CC84) TEST = 64
+            // Leaving WAND mode: restore default pitch bend range (±2) and re-center bend
+            // RPN 0,0 then Data Entry MSB = 2, then RPN null
+            synths[synthIdx]?!.midiEvent(cmd: 0xB0 | channel, d1: 101, d2: 0)
+            synths[synthIdx]?!.midiEvent(cmd: 0xB0 | channel, d1: 100, d2: 0)
+            synths[synthIdx]?!.midiEvent(cmd: 0xB0 | channel, d1: 6,   d2: 2)
+            synths[synthIdx]?!.midiEvent(cmd: 0xB0 | channel, d1: 101, d2: 127)
+            synths[synthIdx]?!.midiEvent(cmd: 0xB0 | channel, d1: 100, d2: 127)
+
+            // Center pitch bend to 8192 (LSB=0x00, MSB=0x40)
+            synths[synthIdx]?!.midiEvent(cmd: 0xE0 | channel, d1: 0x00, d2: 0x40)
+
+            // Reset internal bend state
+            if #available(iOS 13.0.0, *) {
+                lock.lock()
+                bendForChannel[Int(channel)] = 8192
+                targetBendForChannel[Int(channel)] = 8192
+                lock.unlock()
+            } else {
+                bendForChannel[Int(channel)] = 8192
+                targetBendForChannel[Int(channel)] = 8192
+            }
+
+            // Stop background task
             backgroundBendTaskIsRunning = false
         }
     }
