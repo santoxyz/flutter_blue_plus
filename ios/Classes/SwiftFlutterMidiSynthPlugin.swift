@@ -823,6 +823,9 @@ import Foundation
 
             // Stop background task
             backgroundBendTaskIsRunning = false
+
+            //reset expression to a default of 100
+            synths[synthIdx]?!.midiEvent(cmd: 0xB0 | channel, d1: 11, d2: 100)
         }
     }
     
