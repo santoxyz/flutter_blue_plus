@@ -1,9 +1,18 @@
-# passi:
+#### FLUIDSYNTH BINARIES BUILD INSTRUCTIONS ####
+
+To rebuild Fluidsynth binary libraries and dependencies, see the 
+
+fluidsynth-android-build 
+
+repo.
 
 
-source fluid-android-prepare.sh
-./fluid-clean.sh
-./fluid-android-download-and-compile.sh
+##################################
+
+source fluid-android-prepare.$ARCH
+cp /usr/include/ladspa.h $PREFIX/include # LADSPA Plugins Support
+./fluid-android-clean.sh
+./fluid-android-compile.sh
 
 # in caso di errori utilizzare fluid-android-compile.sh per evitare il download di pacchetti già presenti.
 
@@ -14,7 +23,7 @@ make -j4
 
 ######################################################################################
 #
-# modificare fluid-android-prepare.sh per altre architetture e ripetere le operazioni.
+# eseguire source fluid-android-prepare.$ARCH per altre architetture e ripetere le operazioni.
 #
 ######################################################################################
 

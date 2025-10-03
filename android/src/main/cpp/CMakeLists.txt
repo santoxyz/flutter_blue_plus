@@ -12,6 +12,9 @@ set(fluidsynth_DIR ${CMAKE_CURRENT_SOURCE_DIR}/fluidsynth)
 add_library(libfluidsynth SHARED IMPORTED)
 set_target_properties(libfluidsynth PROPERTIES IMPORTED_LOCATION ${fluidsynth_DIR}/lib/${ANDROID_ABI}/libfluidsynth.so)
 
+add_library(libffi SHARED IMPORTED)
+set_target_properties(libffi PROPERTIES IMPORTED_LOCATION ${fluidsynth_DIR}/lib/${ANDROID_ABI}/libffi.so)
+
 add_library(libgio-2.0 SHARED IMPORTED)
 set_target_properties(libgio-2.0 PROPERTIES IMPORTED_LOCATION ${fluidsynth_DIR}/lib/${ANDROID_ABI}/libgio-2.0.so)
 
@@ -30,6 +33,15 @@ set_target_properties(libgthread-2.0 PROPERTIES IMPORTED_LOCATION ${fluidsynth_D
 # Library that will be called directly from JAVA
 add_library(native-lib SHARED native-lib.cpp)
 
+if(ANDROID)
+    target_link_options(native-lib PRIVATE
+            "-Wl,-z,max-page-size=16384"
+            "-Wl,-z,common-page-size=16384"
+            "-fuse-ld=lld"
+    )
+endif()
+
+
 # Specifies the directory where the C or C++ source coude will look the #include <yourlibrary.h> header files
 target_include_directories(native-lib PRIVATE ${fluidsynth_DIR}/include)
 find_library( log-lib log )
@@ -38,6 +50,7 @@ find_library( log-lib log )
 target_link_libraries(
         native-lib
         libfluidsynth
+        libffi
         libgio-2.0
         libglib-2.0
         libgmodule-2.0
