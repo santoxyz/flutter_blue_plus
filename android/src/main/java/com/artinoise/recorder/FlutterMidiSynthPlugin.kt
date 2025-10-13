@@ -781,6 +781,10 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
       targetBendForChannel[channel] = 8192
 
       backgroundBendTaskIsRunning = false
+
+      //reset expression to a default of 100
+      sendMidi((0xB0 or channel),  11, 100)
+
     }
   }
 
