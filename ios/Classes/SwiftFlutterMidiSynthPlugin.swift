@@ -85,11 +85,12 @@ import Foundation
         case "midiEvent":
             let args = call.arguments as? Dictionary<String, Any>
             let synthIdx = args?["synthIdx"] as! Int
-            let command = args?["command"] as! UInt32
+            let command = args?["command"] as! Int
             let d1 = args?["d1"] as! UInt32
             var d2 = args?["d2"] as! UInt32
-            
-            self.midiEvent(synthIdx: synthIdx, command: command, d1: d1, d2: d2)
+            if(command>0 && synthIdx>0){
+                self.midiEvent(synthIdx: synthIdx, command: UInt32(command), d1: d1, d2: d2)
+            }
             
         case "setReverb":
             let args = call.arguments as? Dictionary<String, Any>
@@ -423,6 +424,11 @@ import Foundation
         if(!allowedInstrumentsIndexes.contains(instrument) && bank == 0){
             print(" error! Instrument \(instrument) not found in \(allowedInstrumentsIndexes)")
             return
+        }
+        if(channel<0){
+            print(" error! channel \(channel) not valid ")
+            return
+
         }
 
         if(mac != nil){

@@ -282,7 +282,11 @@ class AudioCommon: NSObject
     var enabled = UInt32(1)
     var disabled = UInt32(0)
     patch = UInt32(patchNo)
-    
+    if (channel < 0) {
+        print ("can't load patch for ch \(channel)")
+        return;
+    }
+
     checkError(osstatus: AudioUnitSetProperty(
       synthUnit!,
       AudioUnitPropertyID(kAUMIDISynthProperty_EnablePreload),
