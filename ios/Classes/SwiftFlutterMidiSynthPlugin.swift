@@ -85,11 +85,13 @@ import Foundation
         case "midiEvent":
             let args = call.arguments as? Dictionary<String, Any>
             let synthIdx = args?["synthIdx"] as! Int
-            let command = args?["command"] as! Int
+            //let command = args?["command"] as! Int
+            let commandNumber = args?["command"] as? NSNumber;
+            let command = commandNumber?.intValue;
             let d1 = args?["d1"] as! UInt32
             var d2 = args?["d2"] as! UInt32
-            if(command>0 && synthIdx>0){
-                self.midiEvent(synthIdx: synthIdx, command: UInt32(command), d1: d1, d2: d2)
+            if(command!>0 && synthIdx>=0){
+                self.midiEvent(synthIdx: synthIdx, command: UInt32(command!), d1: d1, d2: d2)
             }
             
         case "setReverb":
