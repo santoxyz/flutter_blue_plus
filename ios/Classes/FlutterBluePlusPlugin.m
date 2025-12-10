@@ -1429,7 +1429,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     //NSLog(@"isSysex: hdr=[%02x %02x %02x %02x %02x %02x] tail=[%02x]",bytes[2],bytes[3],bytes[4],bytes[5],bytes[6],bytes[7],bytes[data.length -1] );
 
     if ((unsigned char)bytes[data.length -1] == 0xf7 && memcmp(header,hdr,6)==0 ){
-        NSLog(@"isSysex: true");
+        //NSLog(@"isSysex: true");
         return true;
     }
 
@@ -1530,12 +1530,15 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
           for (NSData* data in messages){
               const char *m = [data bytes];
               unsigned char status = m[0];
-              unsigned char ch = m[1];
+              unsigned char ch = m[1]; //tutti i flauti trasmettono sul canale 0 !! E' inutile...
               unsigned char d1 = m[2];
               unsigned char d2 = m[3];
 
               bool filter_accel = true;
-              if(![_midiSynth hasSpecialModeWANDWithChannel:ch]){ /*in WAND mode let the rotation CC pass*/
+              NSString * mac = [peripheral.identifier UUIDString];
+              unsigned char synthCh = [_midiSynth getChannelWithMac:mac];
+
+              if(![_midiSynth hasSpecialModeWANDWithChannel:synthCh]){ /*in WAND mode let the rotation CC pass*/
                   filter_accel &= (d1 != 52);
               }
               filter_accel &= (d1 != 53); /*filtering accelerometer y an z*/
@@ -1577,8 +1580,10 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
                         d1 = 11; //Expression CC
                       }
                    */
-                          
-                          [_midiSynth midiEventWithMacWithSynthIdx:0 command:(ch | status) d1:d1 d2:d2 mac:[peripheral.identifier UUIDString]];
+                      if(d1 == 52 && [_midiSynth hasSpecialModeWANDWithChannel:ch]) {
+                          NSLog(@"WAND MODE Rotation CC52 on Ch %d : %d",ch, d2);
+                      }
+                      [_midiSynth midiEventWithMacWithSynthIdx:0 command:(ch | status) d1:d1 d2:d2 mac:[peripheral.identifier UUIDString]];
                       break;
                 }
             }

@@ -27,9 +27,9 @@ import Foundation
     var lastNoteForChannel: [UInt32] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     var movingWindowForChannel: [[Int]] = [[],[],[],[],[],[],[],[],[],[],[],[],[],[],[],[]]
     let movingWindowDepth = 1
-    var bendForChannel: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
-    var targetBendForChannel: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
-    var masterVolumeForChannel: [UInt32] = [127,127,127,127,127,127,127,127,127,127,127,127,127,127,127,127];
+    var bendForChannel: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    var targetBendForChannel: [Int] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    var masterVolumeForChannel: [UInt32] = [127,127,127,127,127,127,127,127,127,127,127,127,127,127,127,127]
 
     typealias specialModeInfos = (channel : UInt32, mode: UInt32, notes:[Int], continuous: Bool , time: UInt32, controller: UInt32, muted: Bool)
     var specialModes = [Int:specialModeInfos]() //[channel, specialModeInfos]
@@ -40,7 +40,7 @@ import Foundation
     let wand_velocity = 70
     var classroom: Bool = false
 
-    var synthIdxChannelForMacMap: [String:(Int,Int)] = [:]; //mac <-> synth+ch
+    var synthIdxChannelForMacMap: [String:(Int,Int)] = [:] //mac <-> synth+ch
     private let lock = NSLock()
 
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -645,7 +645,7 @@ import Foundation
                     _d1 = 11 //Map rotation to volume via expression
                     //_d1 = 7 //Map rotation to volume via volume
                     let finalVolume = UInt32(Double(masterVolumeForChannel[ch]*uscaled)/127)
-                    print("SwiftFlutterMidiSynthPlugin.swift    Rotation: uscaled \(uscaled) d2 \(_d2) _d1 \(_d1) incl \(lastInclinationForChannel[ch])")
+                    //print("SwiftFlutterMidiSynthPlugin.swift    Rotation: uscaled \(uscaled) d2 \(_d2) _d1 \(_d1) incl \(lastInclinationForChannel[ch])")
                     synths[_synthIdx]?!.midiEvent(cmd: _command, d1: _d1, d2: finalVolume)
 
                 case 1: /*inclination*/
@@ -680,7 +680,7 @@ import Foundation
                         let pps = 16384.0/Double(span)
                         bend = Int(Double(distance)*pps) + 8192
                         //print("SwiftFlutterMidiSynthPlugin.swift Quantized mode: note \(note) (\(noteToString(note:UInt32(note))) centralNote[\(ch)] \(lastNoteForChannel[ch]) distance \(distance) pps \(pps) => bend \(bend) (d=\(bend-8196))")
-                        print("SwiftFlutterMidiSynthPlugin.swift Inclination: uscaled \(scaled) d2 \(d2) d1 \(_d1)")
+                        //print("SwiftFlutterMidiSynthPlugin.swift Inclination: uscaled \(scaled) d2 \(d2) d1 \(_d1)")
                     }
 
                     if (bend >= 16384) {bend = 16384-1}
@@ -848,5 +848,8 @@ import Foundation
 
     public func getTranspose(mac: String) -> Int {
         return transposes[mac] ?? 0;
+    }
+    public func getChannel(mac: String) -> Int {
+        return recorders[mac] ?? 0;
     }
 }
