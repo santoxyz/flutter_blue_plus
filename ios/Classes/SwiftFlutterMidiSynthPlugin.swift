@@ -485,7 +485,7 @@ import Foundation
         let ch = recorders[mac] ?? 0
         let expression = expressions[mac] ?? false
         if(d1==11 && !expression){
-            print ("expression disabled for this instrument.")
+            //print ("expression disabled for this instrument.")
             _d2 = 80
         }
         var _synthIdx = synthIdx
