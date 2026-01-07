@@ -22,6 +22,7 @@ import Foundation
     var lastNoteOnOff = 0x80
     var allowedInstrumentsIndexes: [Int] = []
     var allowedInstrumentsExpressions: [Bool] = []
+    var groupRecordersUuids: [String] = []
 
     var lastInclinationForChannel: [UInt32] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     var lastNoteForChannel: [UInt32] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
@@ -136,6 +137,11 @@ import Foundation
             let args = arguments?["args"] as! Dictionary<String, Any>
             let r = self.parsedPlayer(cmd: cmd, cmdArgs: args)
             result(r)
+
+        case "setGroupRecordersUuids":
+            let args = call.arguments as? Dictionary<String, Any>
+            let uuids = args?["groupRecordersUuids"] as! [String]
+            self.setGroupRecordersUuids(uuids:uuids)
 
         default:
             print ("unknown method \(call.method)" )
@@ -467,6 +473,12 @@ import Foundation
         //if (!expression){
         //    vel = Int(xpressionsMap[channel]?.last ?? UInt32(velocity))
         //}
+
+        if !groupRecordersUuids.contains(mac) {
+            print ("noteOnWithMac mac=\(mac) NOT IN CURRENT GROUP! discarding... group=\(groupRecordersUuids)")
+            return
+        }
+
         print ("noteOnWithMac synthIdx=\(synthIdx) ch=\(ch) note=\(note) velocity=\(velocity) expression=\(expression) mac=\(mac) transpose=\(transpose)")
         noteOn(synthIdx: synthIdx, channel: ch, note: note+transpose, velocity: vel)
     }
@@ -852,4 +864,10 @@ import Foundation
     public func getChannel(mac: String) -> Int {
         return recorders[mac] ?? 0;
     }
+
+    public func setGroupRecordersUuids(uuids: [String]){
+        print("setGroupRecordersUuids uuids=\(uuids)")
+        groupRecordersUuids = uuids
+    }
+
 }

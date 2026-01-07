@@ -110,4 +110,9 @@ class FlutterMidiSynthPlugin {
     return res;
   }
 
+  static void setGroupRecordersUuids(List groupRecordersUuids){
+    _channel.invokeMethod("setGroupRecordersUuids", {"groupRecordersUuids": groupRecordersUuids});
+    return;
+  }
+
 }

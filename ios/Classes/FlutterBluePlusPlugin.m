@@ -830,7 +830,8 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             [@"setAllowedInstrumentsIndexes" isEqualToString:call.method] ||
             [@"setSpecialMode" isEqualToString:call.method] ||
             [@"parsed_player" isEqualToString:call.method] ||
-            [@"uses_internal_midi_management" isEqualToString:call.method]
+            [@"uses_internal_midi_management" isEqualToString:call.method] ||
+            [@"setGroupRecordersUuids" isEqualToString:call.method]
         ) {
             [_midiSynth handleMethodCall:call result:result];
         }
