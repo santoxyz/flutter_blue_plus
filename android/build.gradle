@@ -12,7 +12,7 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.android.tools.build:gradle:4.1.3'
+        classpath 'com.android.tools.build:gradle:8.7.3'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -20,14 +20,15 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    compileSdkVersion 34
+    namespace 'com.lib.flutter_blue_plus'
+    compileSdkVersion 36
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "17" // or use "11" if you're targeting Java 11
+        jvmTarget = "17"
     }
 
     lintOptions {
@@ -48,11 +49,9 @@ android {
     }
 
     externalNativeBuild {
-//        ndkBuild { path 'src/main/jni/Android.mk' }
         cmake {
             path "src/main/cpp/CMakeLists.txt"
         }
-
     }
 
     gradle.projectsEvaluated {
@@ -60,11 +59,6 @@ android {
             options.compilerArgs << "-Xlint:deprecation"
             options.compilerArgs << "-Xlint:unchecked"
         }
-    }
-
-    // Conditional for compatibility with AGP <4.2.
-    if (project.android.hasProperty("namespace")) {
-        namespace 'com.lib.flutter_blue_plus'
     }
 }
 
