@@ -4,6 +4,35 @@ import AVFoundation
 import AudioToolbox
 import Foundation
 
+//AIR DRUM mode (mode 3) - see air_drum.dart
+//The re.corder sends: CC1 = inclination, CC52 = wrist rotation and
+//CC53 = z-axis (mapped on entering the mode to read the acceleration peaks).
+//- the z-axis acceleration peaks trigger the drum hits
+//- the inclination selects the zone: low = drums, high = cymbals
+//- the wrist rotation selects which drum/cymbal (left, center, right)
+class AirDrumState {
+    var base:Double = 64.0       //slow moving baseline of the z-axis CC (float: the integer division would stall it)
+    var lastZ:Int = 64           //last raw CC53 value
+    var prevDev:Int = 0          //deviation of the previous z sample (for the slope)
+    var zValid:Bool = false      //false until the first z sample (no slope available yet)
+    var lastSlope:Int = 0        //last slope (for the UI debug)
+    var detectorState:Int = 0    //0 = IDLE, 1 = ARMED, 2 = REFRACTORY
+    var armPeak:Int = 0          //peak slope reached while armed (end-of-fast-phase detection)
+    var armEnergy:Int = 0        //sum of the slope magnitudes while armed (strike strength)
+    var armSlope:Int = 0         //sign of the slope that armed the detector
+    var stateMs:Double = 0       //when the current state was entered
+    var inclination:Int = 64     //last raw CC1 value
+    var rotation:Int = 64        //last raw CC52 value
+    var inclHist:[Int] = [64, 64, 64] //last 3 raw CC1 values
+    var rotHist:[Int] = [64, 64, 64]  //last 3 raw CC52 values
+    var inclSmooth:Int = 64      //median of the last CC1 values (aimed zone)
+    var rotSmooth:Int = 64       //median of the last CC52 values (aimed zone)
+    var inclZone:Int = 0         //0 = drums, 1 = cymbals
+    var hitElement:Int = 0       //element index captured when the hit is armed
+    var lastElement:Int = -1     //last element index sent to the UI
+    var lastDebugMs:Double = 0   //throttle for the UI debug messages
+}
+
 @objcMembers public class SwiftFlutterMidiSynthPlugin: NSObject, FlutterPlugin {
 
     var parent: FlutterBluePlusPlugin?
@@ -30,6 +59,26 @@ import Foundation
     var backgroundBendTaskIsRunning: Bool = false
 
     let wand_velocity = 70
+
+    //AIR DRUM tuning - measured on the device: CC53 (z-axis) is an ORIENTATION
+    //(gravity) channel like CC1: 64 when horizontal, saturating at 127 at both
+    //ends of the swing, so the hits are detected via the slope (rate of change)
+    let AIR_DRUM_INCL_CYMBALS_THR = 80 //CC1 > thr => cymbals zone, drums otherwise
+    let AIR_DRUM_ROT_LEFT_MAX = 36     //CC52 < thr => left zone (measured: 20 left, 52 center, 110 right)
+    let AIR_DRUM_ROT_RIGHT_MIN = 81    //CC52 >= thr => right zone
+    let AIR_DRUM_PEAK_DROP = 8         //slope fade (CC/sample) that ends the fast phase of a strike
+    let AIR_DRUM_REFRACTORY_MS = 180.0  //min interval between two hits (swallows the impact bounce)
+    let AIR_DRUM_ARM_TIMEOUT_MS = 150.0 //a fast phase longer than this triggers the hit anyway
+    let AIR_DRUM_BASELINE_DIV = 64.0   //baseline adaptation speed (ema divisor)
+    let AIR_DRUM_SLOPE_THR_MIN = 4     //slope threshold at max sensitivity (CC/sample)
+    let AIR_DRUM_SLOPE_THR_MAX = 28    //slope threshold at min sensitivity (CC/sample)
+    let AIR_DRUM_DEFAULT_SLOPE_THR = 14 //slope threshold when not set via CC5
+    let AIR_DRUM_SLOPE_VEL_MAX = 80    //strike energy (sum of the slopes) mapped to the maximum velocity
+    let AIR_DRUM_MIN_VELOCITY = 40
+    let AIR_DRUM_NOTE_DURATION_S = 0.15
+    let AIR_DRUM_UI_DEBUG_PERIOD_MS = 100.0 //throttle of the AirDrumDebug messages to the UI
+    let AIR_DRUM_DEBUG = false //logs the raw CC values and the state machine (set false when done debugging)
+    var airDrumStates = [Int:AirDrumState]()
 
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "FlutterMidiSynthPlugin", binaryMessenger: registrar.messenger())
@@ -323,6 +372,11 @@ import Foundation
 
     public func noteOn(channel: Int, note: Int, velocity: Int){
         if (channel < 0 || note < 0 || velocity < 0){ return }
+        if(specialModes[channel]?.mode == 3){
+            //AIR DRUM mode: the breath/fingering notes are filtered -
+            //the acceleration peak itself is the only note-on
+            return
+        }
         var _channel = channel
         var _velocity = /*lastNoteOnOff == NOTE_OFF ? 0 :*/ velocity
 
@@ -342,6 +396,11 @@ import Foundation
     
     public func noteOff(channel: Int, note: Int, velocity: Int){
         if (channel < 0 || note < 0 || velocity < 0){ return }
+        if(specialModes[channel]?.mode == 3){
+            //AIR DRUM mode: the breath/fingering notes are filtered -
+            //the acceleration peak itself is the only note-on
+            return
+        }
         var _channel = channel
 
         if(specialModes[_channel]?.mode == 1){
@@ -492,6 +551,22 @@ import Foundation
                 }
             }
 
+        } else if (infos?.mode == 3) { //AIR DRUM MODE
+            if(_command & 0xf0 == 0xb0){
+                switch d1 {
+                case 1: /*inclination: selects the drums/cymbals zone*/
+                    airDrumSetInclination(ch: ch, value: Int(_d2))
+                case 52: /*wrist rotation: selects which drum/cymbal*/
+                    airDrumSetRotation(ch: ch, value: Int(_d2))
+                case 53: /*z-axis: acceleration peak => drum hit*/
+                    airDrumOnZ(ch: ch, value: Int(_d2))
+                case 5: /*hit sensitivity threshold (like the wand portamento time)*/
+                    specialModes[ch]?.time = _d2
+                default:
+                    break
+                }
+            }
+
         } else {
             //print("SwiftFlutterMidiSyntPlugin.swift NORMAL MODE")
             if(command & 0xf0 == 0xb0 && d1 == 11) {
@@ -582,5 +657,183 @@ import Foundation
     public func hasSpecialModeWAND(channel: UInt32) -> Bool {
         let infos = specialModes[Int(channel)]
         return infos?.1 == 1
+    }
+
+    public func hasSpecialModeAIRDRUM(channel: UInt32) -> Bool {
+        let infos = specialModes[Int(channel)]
+        return infos?.1 == 3
+    }
+    
+    ///////////////////////
+    //AIR DRUM mode (mode 3)
+    ///////////////////////
+    private func airDrumState(ch: Int) -> AirDrumState {
+        var state = airDrumStates[ch]
+        if (state == nil) {
+            state = AirDrumState()
+            airDrumStates[ch] = state
+        }
+        return state!
+    }
+
+    //median of 3 values: follows an intentional wrist move within ~2 samples
+    //while rejecting the single-sample swings of a strike
+    private func airDrumMedian(_ a: [Int]) -> Int {
+        let s = a.sorted()
+        return s[1]
+    }
+    
+    private func airDrumNotes(ch: Int) -> [Int] {
+        return specialModes[ch]?.notes ?? []
+    }
+    
+    //converts the sensitivity (CC5, 10..100, higher = more sensitive) to the
+    //slope threshold in CC units per sample
+    private func airDrumThreshold(ch: Int) -> Int {
+        let sens = Int(specialModes[ch]?.time ?? 0)
+        if (sens < 1) { return AIR_DRUM_DEFAULT_SLOPE_THR }
+        return AIR_DRUM_SLOPE_THR_MAX - (sens - 10) * (AIR_DRUM_SLOPE_THR_MAX - AIR_DRUM_SLOPE_THR_MIN) / 90
+    }
+    
+    private func airDrumElementIndex(state: AirDrumState) -> Int {
+        //cymbals if the smoothed inclination > 80, drums otherwise. The smoothed
+        //values are used so that the fast swings of a strike do not change the
+        //aimed element: the zone is the one the user is aiming at.
+        state.inclZone = state.inclSmooth > AIR_DRUM_INCL_CYMBALS_THR ? 1 : 0
+        let rotZone = state.rotSmooth < AIR_DRUM_ROT_LEFT_MAX ? 0 : (state.rotSmooth < AIR_DRUM_ROT_RIGHT_MIN ? 1 : 2)
+        return state.inclZone * 3 + rotZone
+    }
+    
+    //sends the currently aimed drum element to the UI (air_drum.dart)
+    private func airDrumUpdateElement(ch: Int, state: AirDrumState) {
+        let idx = airDrumElementIndex(state: state)
+        if (idx == state.lastElement) { return }
+        state.lastElement = idx
+        let notes = airDrumNotes(ch: ch)
+        if (idx < 0 || idx >= notes.count) { return }
+        var note = notes[idx]
+        parent?.sendMessage("AirDrum", withBody: Data(bytes:&note, count:1))
+    }
+    
+    private func airDrumSetInclination(ch: Int, value: Int) {
+        let state = airDrumState(ch: ch)
+        let changed = state.inclination != value
+        state.inclination = value
+        state.inclHist[0] = state.inclHist[1]
+        state.inclHist[1] = state.inclHist[2]
+        state.inclHist[2] = value
+        state.inclSmooth = airDrumMedian(state.inclHist)
+        if (AIR_DRUM_DEBUG && changed) {
+            let zone = airDrumElementIndex(state: state) >= 3 ? "cymbals" : "drums"
+            print("AD ch\(ch) INCL v=\(value) s=\(state.inclSmooth) zone=\(zone)")
+        }
+        airDrumUpdateElement(ch: ch, state: state)
+        airDrumSendDebug(ch: ch, state: state, now: Double(NSDate().timeIntervalSince1970 * 1000))
+    }
+    
+    private func airDrumSetRotation(ch: Int, value: Int) {
+        let state = airDrumState(ch: ch)
+        let changed = state.rotation != value
+        state.rotation = value
+        state.rotHist[0] = state.rotHist[1]
+        state.rotHist[1] = state.rotHist[2]
+        state.rotHist[2] = value
+        state.rotSmooth = airDrumMedian(state.rotHist)
+        if (AIR_DRUM_DEBUG && changed) {
+            let zone = ["left", "center", "right"][airDrumElementIndex(state: state) % 3]
+            print("AD ch\(ch) ROT v=\(value) s=\(state.rotSmooth) zone=\(zone)")
+        }
+        airDrumUpdateElement(ch: ch, state: state)
+        airDrumSendDebug(ch: ch, state: state, now: Double(NSDate().timeIntervalSince1970 * 1000))
+    }
+    
+    ///detects the strikes on the z-axis CC and triggers the drum hit.
+    ///The z-axis CC is an orientation (gravity) channel saturating at both ends
+    ///of the swing, so the hit is detected via the SLOPE (rate of change):
+    ///ARMED on a fast change -> HIT when the slope reverses or fades ->
+    ///REFRACTORY to avoid the stick bounce retriggering (each hit must
+    ///produce exactly one sound).
+    private func airDrumOnZ(ch: Int, value: Int) {
+        let state = airDrumState(ch: ch)
+        let now = Double(NSDate().timeIntervalSince1970 * 1000)
+        let dev = Int((Double(value) - state.base).rounded())
+        state.lastZ = value
+        
+        //slow baseline adaptation (follows any held position, even a saturated one)
+        state.base += (Double(value) - state.base) / AIR_DRUM_BASELINE_DIV
+        
+        //slope = rate of change of the deviation: the strike signature.
+        //The CC53 value saturates at both ends of the swing (orientation channel),
+        //so the amplitude carries no dynamics, only the speed does.
+        var slope = 0
+        if (state.zValid) { slope = dev - state.prevDev }
+        state.prevDev = dev
+        state.zValid = true
+        state.lastSlope = slope
+        
+        if (AIR_DRUM_DEBUG) { print("AD ch\(ch) Z v=\(value) b=\(Int(state.base)) d=\(dev) sl=\(slope) st=\(state.detectorState) pk=\(state.armPeak) en=\(state.armEnergy)") }
+        
+        let threshold = airDrumThreshold(ch: ch)
+        
+        switch state.detectorState {
+        case 0: //IDLE: arm on a fast change (a strike, not a slow tilt)
+            if (abs(slope) >= threshold) {
+                state.detectorState = 1; state.armPeak = abs(slope); state.armEnergy = state.armPeak
+                state.armSlope = slope > 0 ? 1 : -1
+                state.stateMs = now
+                state.hitElement = airDrumElementIndex(state: state) //capture the aimed element at the beginning of the strike
+                if (AIR_DRUM_DEBUG) { print("AD ch\(ch) ARM pk=\(state.armPeak) el=\(state.hitElement)") }
+            }
+        case 1: //ARMED: accumulate the strike energy until the fast phase ends
+            let s = abs(slope)
+            state.armEnergy += s
+            if (s > state.armPeak) { state.armPeak = s }
+            //the fast phase ends when the slope reverses (impact turnaround) or fades
+            if (s < state.armPeak - AIR_DRUM_PEAK_DROP || slope * state.armSlope < 0) {
+                airDrumTrigger(ch: ch, intensity: state.armEnergy)
+                state.detectorState = 2; state.stateMs = now
+            } else if (now - state.stateMs > AIR_DRUM_ARM_TIMEOUT_MS) { //long fast phase: trigger anyway
+                airDrumTrigger(ch: ch, intensity: state.armEnergy)
+                state.detectorState = 2; state.stateMs = now
+            }
+        default: //2 = REFRACTORY: swallow the impact bounce/ringing
+            if (now - state.stateMs > AIR_DRUM_REFRACTORY_MS) { state.detectorState = 0 }
+        }
+        
+        airDrumSendDebug(ch: ch, state: state, now: now)
+    }
+    
+    //sends the live values to the UI debug panel (air_drum.dart), throttled
+    private func airDrumSendDebug(ch: Int, state: AirDrumState, now: Double) {
+        if (now - state.lastDebugMs < AIR_DRUM_UI_DEBUG_PERIOD_MS) { return }
+        state.lastDebugMs = now
+        let data = Data([UInt8(max(0, min(127, state.inclSmooth))),
+                         UInt8(max(0, min(127, state.rotSmooth))),
+                         UInt8(max(0, min(127, state.lastZ))),
+                         UInt8(Int(max(0, min(127, state.base)))),
+                         UInt8(state.detectorState),
+                         UInt8(max(0, min(127, state.lastSlope + 64))))]) //slope offset by 64 (signed)
+        parent?.sendMessage("AirDrumDebug", withBody: data)
+    }
+    
+    private func airDrumTrigger(ch: Int, intensity: Int) {
+        let notes = airDrumNotes(ch: ch)
+        let state = airDrumState(ch: ch)
+        let idx = state.hitElement //element aimed when the strike started (captured on ARM)
+        if (idx < 0 || idx >= notes.count) { return }
+        let outCh = Int(specialModes[ch]?.controller ?? 9)
+        let note = notes[idx]
+        //the peak slope is the strike speed: map it to the velocity
+        let s = min(intensity, AIR_DRUM_SLOPE_VEL_MAX)
+        var vel = AIR_DRUM_MIN_VELOCITY + s * (127 - AIR_DRUM_MIN_VELOCITY) / AIR_DRUM_SLOPE_VEL_MAX
+        if (vel > 127) { vel = 127 }
+        if (vel < AIR_DRUM_MIN_VELOCITY) { vel = AIR_DRUM_MIN_VELOCITY }
+        print("airDrum HIT ch=\(outCh) note=\(note) vel=\(vel) intensity=\(intensity)")
+        wand_noteOn(channel: outCh, note: note, velocity: vel)
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + AIR_DRUM_NOTE_DURATION_S) {
+            self.wand_noteOff(channel: outCh, note: note, velocity: 0)
+        }
+        var n = note
+        parent?.sendMessage("AirDrum", withBody: Data(bytes:&n, count:1)) //Send played drum element to UI
     }
 }

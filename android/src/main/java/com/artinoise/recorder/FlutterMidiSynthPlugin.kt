@@ -64,6 +64,234 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
 
   private var wand_velocity = 70
 
+  ///////////////////////
+  //AIR DRUM mode (mode 3) - see air_drum.dart
+  //The re.corder sends: CC1 = inclination, CC52 = wrist rotation and
+  //CC53 = z-axis. NOTE: CC53 is an ORIENTATION (gravity) channel like CC1,
+  //not a dynamic acceleration: it reads 64 when the stick is horizontal and
+  //saturates at 127 at both ends of the swing, so the value amplitude carries
+  //no dynamics. A strike is therefore detected via the RATE OF CHANGE
+  //(slope) of the value: fast transitions = hit, slow transitions = tilt.
+  //- the z-axis slope triggers the drum hits (velocity from the slope)
+  //- the inclination selects the zone: low = drums, high = cymbals
+  //- the wrist rotation selects which drum/cymbal (left, center, right)
+  ///////////////////////
+  class AirDrumState {
+    var base = 64.0          //slow moving baseline of the z-axis CC (float: the integer division would stall it)
+    var lastZ = 64           //last raw CC53 value
+    var prevDev = 0          //deviation of the previous z sample (for the slope)
+    var zValid = false       //false until the first z sample (no slope available yet)
+    var lastSlope = 0        //last slope (for the UI debug)
+    var detectorState = 0    //0 = IDLE, 1 = ARMED, 2 = REFRACTORY
+    var armPeak = 0          //peak slope reached while armed (end-of-fast-phase detection)
+    var armEnergy = 0        //sum of the slope magnitudes while armed (strike strength)
+    var armSlope = 0         //sign of the slope that armed the detector
+    var stateMs = 0L         //when the current state was entered
+    var inclination = 64     //last raw CC1 value
+    var rotation = 64        //last raw CC52 value
+    var inclHist = intArrayOf(64, 64, 64) //last 3 raw CC1 values
+    var rotHist = intArrayOf(64, 64, 64)  //last 3 raw CC52 values
+    var inclSmooth = 64      //median of the last CC1 values (aimed zone)
+    var rotSmooth = 64       //median of the last CC52 values (aimed zone)
+    var inclZone = 0         //0 = drums, 1 = cymbals
+    var hitElement = 0       //element index captured when the hit is armed
+    var lastElement = -1     //last element index sent to the UI
+    var lastDebugMs = 0L     //throttle for the UI debug messages
+  }
+
+  private val airDrumStates = HashMap<Int, AirDrumState>()
+
+  //AIR DRUM tuning - measured on the device: CC53 (z-axis) is an ORIENTATION
+  //(gravity) channel like CC1: 64 when horizontal, saturating at 127 at both
+  //ends of the swing, so the hits are detected via the slope (rate of change)
+  private val AIR_DRUM_INCL_CYMBALS_THR = 80 //CC1 > thr => cymbals zone, drums otherwise
+  private val AIR_DRUM_ROT_LEFT_MAX = 36     //CC52 < thr => left zone (measured: 20 left, 52 center, 110 right)
+  private val AIR_DRUM_ROT_RIGHT_MIN = 81    //CC52 >= thr => right zone
+  private val AIR_DRUM_PEAK_DROP = 8         //slope fade (CC/sample) that ends the fast phase of a strike
+  private val AIR_DRUM_REFRACTORY_MS = 180L  //min interval between two hits (swallows the impact bounce)
+  private val AIR_DRUM_ARM_TIMEOUT_MS = 150L //a fast phase longer than this triggers the hit anyway
+  private val AIR_DRUM_BASELINE_DIV = 64     //baseline adaptation speed (ema divisor)
+  private val AIR_DRUM_SLOPE_THR_MIN = 4     //slope threshold at max sensitivity (CC/sample)
+  private val AIR_DRUM_SLOPE_THR_MAX = 28    //slope threshold at min sensitivity (CC/sample)
+  private val AIR_DRUM_DEFAULT_SLOPE_THR = 14 //slope threshold when not set via CC5
+  private val AIR_DRUM_SLOPE_VEL_MAX = 80    //strike energy (sum of the slopes) mapped to the maximum velocity
+  private val AIR_DRUM_MIN_VELOCITY = 40
+  private val AIR_DRUM_NOTE_DURATION_MS = 150L
+  private val AIR_DRUM_UI_DEBUG_PERIOD_MS = 100L //throttle of the AirDrumDebug messages to the UI
+  private val AIR_DRUM_DEBUG = false //logs the raw CC values and the state machine (set false when done debugging)
+
+  private fun airDrumState(ch: Int) : AirDrumState {
+    var state = airDrumStates[ch]
+    if (state == null) {
+      state = AirDrumState()
+      airDrumStates[ch] = state
+    }
+    return state
+  }
+
+  //median of 3 values: follows an intentional wrist move within ~2 samples
+  //while rejecting the single-sample swings of a strike
+  private fun airDrumMedian(a: IntArray) : Int {
+    val s = a.copyOf()
+    java.util.Arrays.sort(s)
+    return s[1]
+  }
+
+  private fun airDrumElementIndex(state: AirDrumState) : Int {
+    //cymbals if the smoothed inclination > 80, drums otherwise. The smoothed
+    //values are used so that the fast swings of a strike do not change the
+    //aimed element: the zone is the one the user is aiming at.
+    state.inclZone = if (state.inclSmooth > AIR_DRUM_INCL_CYMBALS_THR) 1 else 0
+    val rotZone = if (state.rotSmooth < AIR_DRUM_ROT_LEFT_MAX) 0 else if (state.rotSmooth < AIR_DRUM_ROT_RIGHT_MIN) 1 else 2
+    return state.inclZone * 3 + rotZone
+  }
+
+  private fun airDrumNotes(ch: Int) : ArrayList<Int>? {
+    return specialModes[ch]?.get("notes") as? ArrayList<Int>
+  }
+
+  //converts the sensitivity (CC5, 10..100, higher = more sensitive) to the
+  //slope threshold in CC units per sample
+  private fun airDrumThreshold(ch: Int) : Int {
+    val sens = specialModes[ch]?.get("time") as? Int ?: 0
+    if (sens < 1) return AIR_DRUM_DEFAULT_SLOPE_THR
+    return AIR_DRUM_SLOPE_THR_MAX - (sens - 10) * (AIR_DRUM_SLOPE_THR_MAX - AIR_DRUM_SLOPE_THR_MIN) / 90
+  }
+
+  //sends the currently aimed drum element to the UI (air_drum.dart)
+  private fun airDrumUpdateElement(ch: Int, state: AirDrumState) {
+    val idx = airDrumElementIndex(state)
+    if (idx == state.lastElement) return
+    state.lastElement = idx
+    val notes = airDrumNotes(ch) ?: return
+    if (idx < 0 || idx >= notes.size) return
+    parent.sendMessage("AirDrum", byteArrayOf(notes[idx].toByte()))
+  }
+
+  fun airDrumSetInclination(ch: Int, v: Int) {
+    val state = airDrumState(ch)
+    val changed = state.inclination != v
+    state.inclination = v
+    state.inclHist[0] = state.inclHist[1]
+    state.inclHist[1] = state.inclHist[2]
+    state.inclHist[2] = v
+    state.inclSmooth = airDrumMedian(state.inclHist)
+    if (AIR_DRUM_DEBUG && changed) {
+      val zone = if (airDrumElementIndex(state) >= 3) "cymbals" else "drums"
+      println("AD ch$ch INCL v=$v s=${state.inclSmooth} zone=$zone")
+    }
+    airDrumUpdateElement(ch, state)
+    airDrumSendDebug(ch, state, System.currentTimeMillis())
+  }
+
+  fun airDrumSetRotation(ch: Int, v: Int) {
+    val state = airDrumState(ch)
+    val changed = state.rotation != v
+    state.rotation = v
+    state.rotHist[0] = state.rotHist[1]
+    state.rotHist[1] = state.rotHist[2]
+    state.rotHist[2] = v
+    state.rotSmooth = airDrumMedian(state.rotHist)
+    if (AIR_DRUM_DEBUG && changed) {
+      val zone = listOf("left", "center", "right")[airDrumElementIndex(state) % 3]
+      println("AD ch$ch ROT v=$v s=${state.rotSmooth} zone=$zone")
+    }
+    airDrumUpdateElement(ch, state)
+    airDrumSendDebug(ch, state, System.currentTimeMillis())
+  }
+
+  ///detects the acceleration peaks on the z-axis CC and triggers the drum hit.
+  ///Small state machine to avoid the stick bounce retriggering (each hit must
+  ///produce exactly one sound): ARMED on a rising/falling deviation above the
+  ///threshold -> HIT when the value falls back -> REFRACTORY until the signal
+  ///settles near the baseline again.
+  fun airDrumOnZ(ch: Int, v: Int) {
+    val state = airDrumState(ch)
+    val now = System.currentTimeMillis()
+    val dev = Math.round(v - state.base).toInt()
+    state.lastZ = v
+
+    //slow baseline adaptation (follows any held position, even a saturated one)
+    state.base += (v - state.base) / AIR_DRUM_BASELINE_DIV
+
+    //slope = rate of change of the deviation: the strike signature.
+    //The CC53 value saturates at both ends of the swing (orientation channel),
+    //so the amplitude carries no dynamics, only the speed does.
+    var slope = 0
+    if (state.zValid) slope = dev - state.prevDev
+    state.prevDev = dev
+    state.zValid = true
+    state.lastSlope = slope
+
+    if (AIR_DRUM_DEBUG) println("AD ch$ch Z v=$v b=${state.base.toInt()} d=$dev sl=$slope st=${state.detectorState} pk=${state.armPeak} en=${state.armEnergy}")
+
+    val threshold = airDrumThreshold(ch)
+
+    when (state.detectorState) {
+      0 -> { //IDLE: arm on a fast change (a strike, not a slow tilt)
+        if (Math.abs(slope) >= threshold) {
+          state.detectorState = 1; state.armPeak = Math.abs(slope); state.armEnergy = state.armPeak
+          state.armSlope = if (slope > 0) 1 else -1
+          state.stateMs = now
+          state.hitElement = airDrumElementIndex(state) //capture the aimed element at the beginning of the strike
+          if (AIR_DRUM_DEBUG) println("AD ch$ch ARM pk=${state.armPeak} el=${state.hitElement}")
+        }
+      }
+      1 -> { //ARMED: accumulate the strike energy until the fast phase ends
+        val s = Math.abs(slope)
+        state.armEnergy += s
+        if (s > state.armPeak) state.armPeak = s
+        //the fast phase ends when the slope reverses (impact turnaround) or fades
+        if (s < state.armPeak - AIR_DRUM_PEAK_DROP || slope * state.armSlope < 0) {
+          airDrumTrigger(ch, state.armEnergy)
+          state.detectorState = 2; state.stateMs = now
+        } else if (now - state.stateMs > AIR_DRUM_ARM_TIMEOUT_MS) { //long fast phase: trigger anyway
+          airDrumTrigger(ch, state.armEnergy)
+          state.detectorState = 2; state.stateMs = now
+        }
+      }
+      2 -> { //REFRACTORY: swallow the impact bounce/ringing
+        if (now - state.stateMs > AIR_DRUM_REFRACTORY_MS) state.detectorState = 0
+      }
+    }
+
+    airDrumSendDebug(ch, state, now)
+  }
+
+  //sends the live values to the UI debug panel (air_drum.dart), throttled
+  private fun airDrumSendDebug(ch: Int, state: AirDrumState, now: Long) {
+    if (now - state.lastDebugMs < AIR_DRUM_UI_DEBUG_PERIOD_MS) return
+    state.lastDebugMs = now
+    parent.sendMessage("AirDrumDebug", byteArrayOf(
+        state.inclSmooth.coerceIn(0, 127).toByte(),
+        state.rotSmooth.coerceIn(0, 127).toByte(),
+        state.lastZ.coerceIn(0, 127).toByte(),
+        state.base.toInt().coerceIn(0, 127).toByte(),
+        state.detectorState.toByte(),
+        (state.lastSlope + 64).coerceIn(0, 127).toByte())) //slope offset by 64 (signed)
+  }
+
+  fun airDrumTrigger(ch: Int, intensity: Int) {
+    val notes = airDrumNotes(ch) ?: return
+    val state = airDrumState(ch)
+    val idx = state.hitElement //element aimed when the strike started (captured on ARM)
+    if (idx < 0 || idx >= notes.size) return
+    val outCh = specialModes[ch]?.get("controller") as? Int ?: 9
+    val note = notes[idx]
+    //the peak slope is the strike speed: map it to the velocity
+    val s = Math.min(intensity, AIR_DRUM_SLOPE_VEL_MAX)
+    var vel = AIR_DRUM_MIN_VELOCITY + s * (127 - AIR_DRUM_MIN_VELOCITY) / AIR_DRUM_SLOPE_VEL_MAX
+    if (vel > 127) vel = 127
+    if (vel < AIR_DRUM_MIN_VELOCITY) vel = AIR_DRUM_MIN_VELOCITY
+    println("airDrum HIT ch=$outCh note=$note vel=$vel intensity=$intensity")
+    wand_sendNoteOn(outCh, note, vel)
+    GlobalScope.launch {
+      delay(AIR_DRUM_NOTE_DURATION_MS)
+      wand_sendNoteOff(outCh, note, 0)
+    }
+    parent.sendMessage("AirDrum", byteArrayOf(note.toByte())) //Send played drum element to UI
+  }
+
   //NO MORE used as a plugin
   /*
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -417,6 +645,11 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
   }
 
   public fun sendNoteOn(ch: Int, n: Int, v: Int) {
+    if(specialModes[ch]?.get("mode") == 3){
+      //AIR DRUM mode: the breath/fingering notes are filtered -
+      //the acceleration peak itself is the only note-on
+      return
+    }
     //println (" -> noteON ch $ch n $n v $v")
     val msg = ByteArray(3)
     var _ch = ch
@@ -434,6 +667,11 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
   }
 
   public fun sendNoteOff(ch: Int, n: Int, v: Int) {
+    if(specialModes[ch]?.get("mode") == 3){
+      //AIR DRUM mode: the breath/fingering notes are filtered -
+      //the acceleration peak itself is the only note-on
+      return
+    }
     val msg = ByteArray(3)
     var _ch = ch
     if(specialModes[_ch]?.get("mode") == 1){
@@ -620,6 +858,32 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
           }
         }
       }
+    } else if(infos?.get("mode") == 3) { //AIR DRUM mode
+      if (m and 0xf0 == 0xb0){
+        when (n) {
+          1 -> { //inclination: selects the drums/cymbals zone
+            airDrumSetInclination(ch, v)
+            send = false
+          }
+
+          52 -> { //wrist rotation: selects which drum/cymbal
+            airDrumSetRotation(ch, v)
+            send = false
+          }
+
+          53 -> { //z-axis: acceleration peak => drum hit
+            airDrumOnZ(ch, v)
+            send = false
+          }
+
+          5 -> { //hit sensitivity threshold (like the wand portamento time)
+            var map = specialModes[ch]?.toMutableMap()
+            map?.set("time", v)
+            specialModes[ch] = HashMap(map)
+            send = false
+          }
+        }
+      }
     }
 
     if(send) {
@@ -744,6 +1008,11 @@ public class FlutterMidiSynthPlugin(val context: Context, val parent: FlutterBlu
   fun hasSpecialModeWAND(channel: Int) : Boolean {
     val infos = specialModes[channel]
     return infos?.get("mode") == 1
+  }
+
+  fun hasSpecialModeAIRDRUM(channel: Int) : Boolean {
+    val infos = specialModes[channel]
+    return infos?.get("mode") == 3
   }
 
 }
