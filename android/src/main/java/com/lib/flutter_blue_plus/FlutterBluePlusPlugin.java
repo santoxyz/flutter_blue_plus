@@ -2996,10 +2996,12 @@ public class FlutterBluePlusPlugin implements
 
 
                 boolean filter_accel = true;
-                if(!midiSynthPlugin.hasSpecialModeWAND(ch)){ /*in WAND mode let the rotation CC pass*/
+                if(!midiSynthPlugin.hasSpecialModeWAND(ch) && !midiSynthPlugin.hasSpecialModeAIRDRUM(ch)){ /*in WAND/AIR DRUM mode let the rotation CC pass*/
                     filter_accel &= (d1 != 52);
                 }
-                filter_accel &= (d1 != 53); /*filtering accelerometer y an z*/
+                if(!midiSynthPlugin.hasSpecialModeAIRDRUM(ch)) {
+                    filter_accel &= (d1 != 53); /*filtering accelerometer z (let pass in AIR DRUM mode: used for the peak detection)*/
+                }
 
 
                 if (status == (byte)0x90 /*noteON*/ ||

@@ -1528,10 +1528,12 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             unsigned char d2 = m[3];
 
             bool filter_accel = true;
-            if(![_midiSynth hasSpecialModeWANDWithChannel:ch]){ /*in WAND mode let the rotation CC pass*/
+            if(![_midiSynth hasSpecialModeWANDWithChannel:ch] && ![_midiSynth hasSpecialModeAIRDRUMWithChannel:ch]){ /*in WAND/AIR DRUM mode let the rotation CC pass*/
                 filter_accel &= (d1 != 52);
             }
-            filter_accel &= (d1 != 53); /*filtering accelerometer y an z*/
+            if(![_midiSynth hasSpecialModeAIRDRUMWithChannel:ch]) {
+                filter_accel &= (d1 != 53); /*filtering accelerometer z (let pass in AIR DRUM mode: used for the peak detection)*/
+            }
 
             //NSLog(@"SNTX value:[status:%02x ch:%02x d1:%02x d2:%02x]", status, ch, d1, d2);
 
